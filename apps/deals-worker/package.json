@@ -1,0 +1,10 @@
+{
+  "name": "@kayak/deals-worker",
+  "version": "1.0.0",
+  "description": "Background worker for processing deals and discounts",
+  "main": "src/index.py",
+  "scripts": {
+    "dev": "python src/index.py",
+    "start": "python src/index.py"
+  }
+}

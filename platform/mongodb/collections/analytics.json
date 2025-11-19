@@ -1,0 +1,63 @@
+{
+  "name": "analytics",
+  "description": "Aggregated analytics data for reporting and insights",
+  "validator": {
+    "$jsonSchema": {
+      "bsonType": "object",
+      "required": ["metricType", "date", "value"],
+      "properties": {
+        "metricType": {
+          "bsonType": "string",
+          "enum": [
+            "daily_revenue",
+            "monthly_revenue",
+            "yearly_revenue",
+            "city_revenue",
+            "top_properties",
+            "user_engagement",
+            "conversion_rate",
+            "page_views",
+            "search_queries",
+            "booking_counts"
+          ],
+          "description": "Type of analytics metric"
+        },
+        "date": {
+          "bsonType": "date",
+          "description": "Date for the metric"
+        },
+        "value": {
+          "bsonType": ["double", "int", "object"],
+          "description": "Metric value (numeric or structured)"
+        },
+        "entityId": {
+          "bsonType": ["string", "null"],
+          "description": "Related entity ID (property, user, etc.)"
+        },
+        "entityType": {
+          "bsonType": ["string", "null"],
+          "description": "Type of related entity"
+        },
+        "dimensions": {
+          "bsonType": ["object", "null"],
+          "description": "Additional dimensions for the metric"
+        },
+        "createdAt": {
+          "bsonType": "date",
+          "description": "Analytics record creation timestamp"
+        }
+      }
+    }
+  },
+  "indexes": [
+    {
+      "key": {"metricType": 1, "date": -1}
+    },
+    {
+      "key": {"date": -1}
+    },
+    {
+      "key": {"entityType": 1, "entityId": 1, "date": -1}
+    }
+  ]
+}

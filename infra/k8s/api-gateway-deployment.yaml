@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  labels:
+    app: api-gateway
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      containers:
+      - name: api-gateway
+        image: kayak-clone/api-gateway:latest
+        ports:
+        - containerPort: 8000
+        env:
+        - name: PORT
+          value: "8000"
+        - name: USER_SVC_URL
+          value: "http://user-svc:8001"
+        - name: FLIGHTS_SVC_URL
+          value: "http://flights-svc:8002"
+        - name: HOTELS_SVC_URL
+          value: "http://hotels-svc:8003"
+        - name: CARS_SVC_URL
+          value: "http://cars-svc:8004"
+        - name: BILLING_SVC_URL
+          value: "http://billing-svc:8005"
+        - name: ADMIN_SVC_URL
+          value: "http://admin-svc:8006"
+        - name: CONCIERGE_SVC_URL
+          value: "http://concierge-svc:8007"
+        - name: DEALS_WORKER_URL
+          value: "http://deals-worker:8008"
+        - name: BOOKING_SVC_URL
+          value: "http://booking-svc:8011"
+        - name: REDIS_URL
+          value: "redis://redis:6379"
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-secrets
+              key: jwt-secret
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 250m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+      restartPolicy: Always

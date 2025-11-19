@@ -1,0 +1,141 @@
+# Kayak System - Kafka Topic Configuration
+# This file defines all Kafka topics used in the distributed Kayak system
+
+version: "1.0"
+
+# Core system events
+system_events:
+  - name: user.created
+    partitions: 3
+    replication_factor: 1
+    retention_ms: 604800000  # 7 days
+    description: "User registration events"
+    
+  - name: user.updated
+    partitions: 3
+    replication_factor: 1
+    retention_ms: 604800000
+    description: "User profile updates"
+
+# Booking orchestration
+booking_events:
+  - name: booking-confirmation
+    partitions: 6
+    replication_factor: 1
+    retention_ms: 2592000000  # 30 days
+    description: "Booking confirmation events for notifications and tracking"
+
+# Payment events
+payment_events:
+  - name: payment.events
+    partitions: 4
+    replication_factor: 1
+    retention_ms: 7776000000  # 90 days
+    description: "Payment status events (succeeded/failed) for booking saga"
+    
+  - name: payment-confirmation
+    partitions: 4
+    replication_factor: 1
+    retention_ms: 7776000000
+    description: "Payment confirmation events for notifications"
+
+# Deals and recommendations
+deals_events:
+  - name: deals.raw
+    partitions: 2
+    replication_factor: 1
+    retention_ms: 86400000  # 24 hours
+    description: "Raw supplier feeds ingestion"
+    
+  - name: deals.normalized
+    partitions: 3
+    replication_factor: 1
+    retention_ms: 172800000  # 48 hours
+    description: "Normalized deal data"
+    
+  - name: deals.scored
+    partitions: 3
+    replication_factor: 1
+    retention_ms: 172800000
+    description: "Deals with AI scores"
+    
+  - name: deals.tagged
+    partitions: 3
+    replication_factor: 1
+    retention_ms: 172800000
+    description: "Deals with enriched metadata"
+    
+  - name: deal.events
+    partitions: 6
+    replication_factor: 1
+    retention_ms: 604800000
+    description: "Final deal notifications for UI"
+
+# Inventory and availability
+inventory_events:
+  - name: inventory.updated
+    partitions: 6
+    replication_factor: 1
+    retention_ms: 86400000
+    description: "Real-time inventory changes"
+    
+  - name: pricing.updated
+    partitions: 6
+    replication_factor: 1
+    retention_ms: 86400000
+    description: "Price change notifications"
+
+# Analytics and tracking
+analytics_events:
+  - name: clickstream.events
+    partitions: 3
+    replication_factor: 1
+    retention_ms: 2592000000  # 30 days
+    description: "User interaction tracking"
+    
+  - name: search.events
+    partitions: 3
+    replication_factor: 1
+    retention_ms: 2592000000
+    description: "Search query analytics"
+
+# Notifications
+notification_events:
+  - name: deal-alerts
+    partitions: 4
+    replication_factor: 1
+    retention_ms: 432000000  # 5 days
+    description: "Deal alert notifications from concierge service"
+
+# Error handling
+error_events:
+  - name: error.events
+    partitions: 2
+    replication_factor: 1
+    retention_ms: 604800000
+    description: "System error logging"
+
+# Consumer groups configuration
+consumer_groups:
+  - name: deals-worker-cg
+    topics: ["deals.raw", "deals.normalized", "deals.scored"]
+    description: "AI deal processing"
+    
+  - name: inventory-services-cg
+    topics: ["deal.events"]
+    description: "Flights, hotels, cars services consuming deal events"
+    
+  - name: concierge-cg
+    topics: ["deal.events"]
+    description: "AI concierge service for personalized recommendations"
+    
+  - name: notification-cg
+    topics: ["booking-confirmation", "payment-confirmation", "deal-alerts"]
+    description: "Notification delivery"
+    
+  - name: analytics-cg
+    topics: ["clickstream.events", "search.events"]
+    description: "Analytics processing"
+
+# Topic creation script
+# Run: python3 create_kafka_topics.py

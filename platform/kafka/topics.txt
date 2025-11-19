@@ -1,0 +1,115 @@
+# Kafka Topics Configuration for Kayak-like Travel Booking System
+
+# Deals pipeline topics (for AI recommendations)
+CREATE TOPIC deals.raw; 
+PARTITIONS 6; 
+REPLICATION-FACTOR 1;
+CONFIG "retention.ms"="2592000000" # 30 days
+
+CREATE TOPIC deals.normalized; 
+PARTITIONS 6; 
+REPLICATION-FACTOR 1;
+CONFIG "retention.ms"="2592000000" # 30 days
+
+CREATE TOPIC deals.scored; 
+PARTITIONS 6; 
+REPLICATION-FACTOR 1;
+CONFIG "retention.ms"="2592000000" # 30 days
+
+CREATE TOPIC deals.tagged; 
+PARTITIONS 6; 
+REPLICATION-FACTOR 1;
+CONFIG "retention.ms"="7776000000" # 90 days
+
+# Event topics (for real-time updates and integrations)
+CREATE TOPIC deal.events; 
+PARTITIONS 3; 
+REPLICATION-FACTOR 1;
+CONFIG "retention.ms"="2592000000" # 30 days
+
+CREATE TOPIC watch.events; 
+PARTITIONS 3; 
+REPLICATION-FACTOR 1;
+CONFIG "retention.ms"="2592000000" # 30 days
+
+CREATE TOPIC booking.events; 
+PARTITIONS 3; 
+REPLICATION-FACTOR 1;
+CONFIG "retention.ms"="7776000000" # 90 days
+
+CREATE TOPIC booking-confirmation; 
+PARTITIONS 3; 
+REPLICATION-FACTOR 1;
+CONFIG "retention.ms"="7776000000" # 90 days
+
+CREATE TOPIC billing.events; 
+PARTITIONS 3; 
+REPLICATION-FACTOR 1;
+CONFIG "retention.ms"="7776000000" # 90 days
+
+CREATE TOPIC payment-confirmation; 
+PARTITIONS 3; 
+REPLICATION-FACTOR 1;
+CONFIG "retention.ms"="7776000000" # 90 days
+
+CREATE TOPIC deal-alerts; 
+PARTITIONS 3; 
+REPLICATION-FACTOR 1;
+CONFIG "retention.ms"="7776000000" # 90 days
+
+# Clickstream analytics topic
+CREATE TOPIC clickstream.events; 
+PARTITIONS 10; 
+REPLICATION-FACTOR 1;
+CONFIG "retention.ms"="2592000000" # 30 days
+
+# Dead letter topics for failed messages
+CREATE TOPIC booking.events.dlq; 
+PARTITIONS 3; 
+REPLICATION-FACTOR 1;
+CONFIG "retention.ms"="7776000000" # 90 days
+
+CREATE TOPIC billing.events.dlq; 
+PARTITIONS 3; 
+REPLICATION-FACTOR 1;
+CONFIG "retention.ms"="7776000000" # 90 days
+
+CREATE TOPIC clickstream.events.dlq; 
+PARTITIONS 3; 
+REPLICATION-FACTOR 1;
+CONFIG "retention.ms"="2592000000" # 30 days
+
+# Consumer Groups Configuration:
+# - deals-worker: consumes from deals.raw, produces to deals.normalized
+# - deals-scoring: consumes from deals.normalized, produces to deals.scored
+# - deals-tagging: consumes from deals.scored, produces to deals.tagged
+# - booking-service: consumes from booking.events
+# - notification-service: consumes from booking-confirmation, payment-confirmation, deal-alerts
+# - billing-service: consumes from billing.events
+# - concierge-service: consumes from watch.events
+# - analytics-service: consumes from clickstream.events
+# - cache-invalidation: consumes from various events to update Redis
+
+# Topic Partitioning Strategy:
+# - deals.*: partition by listing/reference_id
+# - booking.confirmation: partition by booking_id
+# - payment.confirmation: partition by payment_id
+# - deal.alerts: partition by user_id
+# - booking.events: partition by booking_id
+# - billing.events: partition by payment_id
+# - clickstream.events: partition by user_id (or session_id for anonymous)
+# - watch.events: partition by user_id
+
+# Message Types per Topic:
+# deals.raw: { type: "new_deal", data: {...} }
+# deals.normalized: { type: "normalized", data: {...} }
+# deals.scored: { type: "scored", data: {...} }
+# deals.tagged: { type: "tagged", data: {...} }
+# deal.events: { type: "deal_created|deal_updated|deal_expired", data: {...} }
+# watch.events: { type: "watch_created|price_drop|availability_change", data: {...} }
+# booking.events: { type: "booking_created|booking_confirmed|booking_cancelled", data: {...} }
+# booking.confirmation: { type: "send_confirmation", data: { userEmail, userPhone, bookingDetails, bookingId } }
+# billing.events: { type: "payment_succeeded|payment_failed|refund_processed", data: {...} }
+# payment.confirmation: { type: "send_confirmation", data: { userEmail, userPhone, paymentDetails, bookingId } }
+# deal.alerts: { type: "send_alert", data: { userEmail, userPhone, dealDetails, userPreferences } }
+# clickstream.events: { type: "page_view|search|click|book", data: {...} }

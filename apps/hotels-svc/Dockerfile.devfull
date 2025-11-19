@@ -1,0 +1,34 @@
+# Monorepo-aware Dockerfile for hotels-svc
+FROM node:18 AS builder
+WORKDIR /workspace
+
+# Root manifests for npm ci layer caching
+COPY package.json package-lock.json ./
+COPY shared/package.json ./shared/package.json
+COPY apps/hotels-svc/package.json ./apps/hotels-svc/package.json
+
+RUN npm ci
+
+# Copy sources
+COPY shared ./shared
+COPY apps/hotels-svc ./apps/hotels-svc
+
+# Build shared then hotels-svc
+RUN npm run -w shared build \
+ && npm run -w apps/hotels-svc build \
+ && npm prune --omit=dev
+
+FROM node:18-slim
+WORKDIR /app
+
+# Copy built artifacts and deps
+COPY --from=builder /workspace/apps/hotels-svc/dist ./apps/hotels-svc/dist
+COPY --from=builder /workspace/node_modules ./node_modules
+COPY --from=builder /workspace/apps/hotels-svc/package*.json ./apps/hotels-svc/
+# Ensure @kayak/shared is available
+COPY --from=builder /workspace/shared/dist ./node_modules/@kayak/shared/dist
+COPY --from=builder /workspace/shared/package.json ./node_modules/@kayak/shared/package.json
+
+ENV NODE_ENV=production
+EXPOSE 8003
+CMD ["node", "apps/hotels-svc/dist/index.js"]

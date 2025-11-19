@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  test-mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${TEST_MYSQL_ROOT_PASSWORD:-change_me_test_root_password}
+      MYSQL_DATABASE: ${TEST_MYSQL_DATABASE:-kayak_test}
+      MYSQL_USER: ${TEST_MYSQL_USER:-testuser}
+      MYSQL_PASSWORD: ${TEST_MYSQL_PASSWORD:-change_me_test_db_password}
+    ports:
+      - "3307:3306"
+    volumes:
+      - test_mysql_data:/var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password
+
+  test-mongodb:
+    image: mongo:6.0
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: testroot
+      MONGO_INITDB_ROOT_PASSWORD: ${TEST_MONGO_INITDB_ROOT_PASSWORD:-change_me_test_mongo_root_password}
+      MONGO_INITDB_DATABASE: ${TEST_MONGO_INITDB_DATABASE:-kayak_test}
+    ports:
+      - "27018:27017"
+    volumes:
+      - test_mongodb_data:/data/db
+
+  test-redis:
+    image: redis:7.0-alpine
+    ports:
+      - "6381:6379"
+    command: redis-server --appendonly no
+
+  test-kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    depends_on:
+      - test-zookeeper
+    ports:
+      - "9093:9093"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: test-zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://test-kafka:29092,PLAINTEXT_HOST://localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  test-zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    ports:
+      - "2182:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+volumes:
+  test_mysql_data:
+  test_mongodb_data:

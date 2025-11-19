@@ -1,0 +1,18 @@
+{
+  "name": "@kayak/tests",
+  "version": "1.0.0",
+  "description": "Testing suite for Kayak microservices",
+  "scripts": {
+    "test:unit": "jest --testPathPattern=unit",
+    "test:integration": "jest --testPathPattern=integration",
+    "test:e2e": "jest --testPathPattern=e2e",
+    "test:performance": "k6 run tests/performance/k6-load-test.js",
+    "seed": "node -e \"console.log('seed disabled in this snapshot')\""
+  },
+  "devDependencies": {
+    "jest": "^29.0.0",
+    "supertest": "^6.3.0",
+    "axios": "^1.5.0",
+    "k6": "^0.45.0"
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "name": "clickstream",
+  "description": "User interaction tracking for analytics",
+  "validator": {
+    "$jsonSchema": {
+      "bsonType": "object",
+      "required": ["eventId", "userId", "sessionId", "eventType", "timestamp", "page"],
+      "properties": {
+        "eventId": {
+          "bsonType": "string",
+          "description": "Unique event identifier"
+        },
+        "userId": {
+          "bsonType": "string",
+          "description": "User ID (nullable for anonymous users)"
+        },
+        "sessionId": {
+          "bsonType": "string",
+          "description": "Session identifier"
+        },
+        "eventType": {
+          "bsonType": "string",
+          "enum": ["page_view", "click", "search", "filter", "booking_start", "booking_complete", "login", "logout"],
+          "description": "Type of user interaction"
+        },
+        "page": {
+          "bsonType": "string",
+          "description": "Current page URL"
+        },
+        "timestamp": {
+          "bsonType": "date",
+          "description": "Event timestamp"
+        },
+        "userAgent": {
+          "bsonType": "string",
+          "description": "Browser user agent"
+        },
+        "ipAddress": {
+          "bsonType": "string",
+          "description": "User IP address"
+        },
+        "referrer": {
+          "bsonType": ["string", "null"],
+          "description": "Referring page"
+        },
+        "searchQuery": {
+          "bsonType": ["string", "null"],
+          "description": "Search query text"
+        },
+        "filterCriteria": {
+          "bsonType": ["object", "null"],
+          "description": "Applied filters"
+        },
+        "entityType": {
+          "bsonType": ["string", "null"],
+          "enum": ["flight", "hotel", "car", null],
+          "description": "Type of entity viewed/clicked"
+        },
+        "entityId": {
+          "bsonType": ["string", "null"],
+          "description": "ID of the entity"
+        },
+        "position": {
+          "bsonType": ["int", "null"],
+          "description": "Position in search results"
+        },
+        "metadata": {
+          "bsonType": ["object", "null"],
+          "description": "Additional event metadata"
+        }
+      }
+    }
+  },
+  "indexes": [
+    {
+      "key": {"eventId": 1},
+      "unique": true
+    },
+    {
+      "key": {"userId": 1, "timestamp": -1}
+    },
+    {
+      "key": {"sessionId": 1, "timestamp": 1}
+    },
+    {
+      "key": {"eventType": 1, "timestamp": -1}
+    },
+    {
+      "key": {"timestamp": -1}
+    },
+    {
+      "key": {"entityType": 1, "entityId": 1, "timestamp": -1}
+    }
+  ]
+}

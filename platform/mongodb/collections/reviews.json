@@ -1,0 +1,97 @@
+{
+  "name": "reviews",
+  "description": "User reviews for flights, hotels, and car rentals",
+  "validator": {
+    "$jsonSchema": {
+      "bsonType": "object",
+      "required": ["reviewId", "userId", "entityType", "entityId", "rating", "reviewText", "createdAt"],
+      "properties": {
+        "reviewId": {
+          "bsonType": "string",
+          "description": "Unique review identifier"
+        },
+        "userId": {
+          "bsonType": "string",
+          "description": "User ID who wrote the review"
+        },
+        "entityType": {
+          "bsonType": "string",
+          "enum": ["flight", "hotel", "car"],
+          "description": "Type of entity being reviewed"
+        },
+        "entityId": {
+          "bsonType": "string",
+          "description": "ID of the flight/hotel/car being reviewed"
+        },
+        "rating": {
+          "bsonType": "int",
+          "minimum": 1,
+          "maximum": 5,
+          "description": "Star rating (1-5)"
+        },
+        "reviewText": {
+          "bsonType": "string",
+          "maxLength": 2000,
+          "description": "Review content"
+        },
+        "title": {
+          "bsonType": "string",
+          "maxLength": 100,
+          "description": "Review title"
+        },
+        "pros": {
+          "bsonType": ["array", "null"],
+          "items": {
+            "bsonType": "string"
+          },
+          "description": "Positive aspects"
+        },
+        "cons": {
+          "bsonType": ["array", "null"],
+          "items": {
+            "bsonType": "string"
+          },
+          "description": "Negative aspects"
+        },
+        "createdAt": {
+          "bsonType": "date",
+          "description": "Review creation timestamp"
+        },
+        "updatedAt": {
+          "bsonType": "date",
+          "description": "Last update timestamp"
+        },
+        "helpfulCount": {
+          "bsonType": "int",
+          "minimum": 0,
+          "default": 0,
+          "description": "Number of users who found this helpful"
+        },
+        "verified": {
+          "bsonType": "bool",
+          "default": false,
+          "description": "Whether the reviewer actually used the service"
+        }
+      }
+    }
+  },
+  "indexes": [
+    {
+      "key": {"reviewId": 1},
+      "unique": true
+    },
+    {
+      "key": {"userId": 1, "entityType": 1, "entityId": 1},
+      "unique": true
+    },
+    {
+      "key": {"entityType": 1, "entityId": 1, "rating": -1}
+    },
+    {
+      "key": {"entityType": 1, "entityId": 1, "createdAt": -1}
+    },
+    {
+      "key": {"userId": 1, "createdAt": -1}
+    }
+  ]
+}

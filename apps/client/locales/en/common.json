@@ -1,0 +1,59 @@
+{
+  "search": {
+    "title": "Find Flights",
+    "subtitle": "Search millions of flights from hundreds of airlines",
+    "origin": "From",
+    "destination": "To",
+    "departure": "Departure",
+    "return": "Return",
+    "passengers": "Passengers",
+    "adults_one": "1 adult",
+    "adults_other": "{{count}} adults",
+    "children_zero": "0 children",
+    "children_other": "{{count}} children",
+    "infants_zero": "0 infants",
+    "infants_other": "{{count}} infants",
+    "cabinClass": "Cabin Class",
+    "economy": "Economy",
+    "premium": "Premium Economy",
+    "business": "Business",
+    "first": "First",
+    "searchButton": "Search Flights",
+    "loading": "Searching flights...",
+    "results": "{{count}} flights found"
+  },
+  "booking": {
+    "title": "Complete Your Booking",
+    "passengerInfo": "Passenger Information",
+    "firstName": "First Name",
+    "lastName": "Last Name",
+    "email": "Email",
+    "phone": "Phone Number",
+    "dateOfBirth": "Date of Birth",
+    "passport": "Passport Number",
+    "paymentInfo": "Payment Information",
+    "total": "Total",
+    "bookNow": "Book Now",
+    "processing": "Processing...",
+    "success": "Booking confirmed!"
+  },
+  "errors": {
+    "generic": "Something went wrong. Please try again.",
+    "network": "Network error. Please check your connection.",
+    "validation": "Please check your input and try again.",
+    "auth": "Please log in to continue."
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "close": "Close",
+    "next": "Next",
+    "previous": "Previous",
+    "submit": "Submit"
+  }
+}

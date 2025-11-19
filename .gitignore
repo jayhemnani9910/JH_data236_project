@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+**/node_modules/
+.venv/
+**/.venv/
+
+# Build artifacts
+dist/
+**/dist/
+build/
+**/build/
+shared/dist/
+apps/client/dist/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
+# Logs & debug output
+*.log
+*.log.*
+.logs/
+client.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+wget-log*
+page-snapshot.html
+preview.html
+test-debug.js
+*.tmp
+
+# Test caches
+.pytest_cache/
+coverage-final.json
+**/__pycache__/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# Editor & OS metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*~

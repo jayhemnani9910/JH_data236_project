@@ -1,0 +1,537 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: user-svc
+spec:
+  selector:
+    app: user-svc
+  ports:
+    - protocol: TCP
+      port: 8001
+      targetPort: 8001
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-svc
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: user-svc
+  template:
+    metadata:
+      labels:
+        app: user-svc
+    spec:
+      containers:
+      - name: user-svc
+        image: kayak-clone/user-svc:latest
+        ports:
+        - containerPort: 8001
+        env:
+        - name: DB_HOST
+          value: "mysql"
+        - name: DB_USER
+          value: "kayak"
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-credentials
+              key: db-password
+        - name: DB_NAME
+          value: "kayak"
+        - name: REDIS_URL
+          value: "redis://redis:6379"
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-secrets
+              key: jwt-secret
+        - name: JWT_REFRESH_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-secrets
+              key: jwt-refresh-secret
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flights-svc
+spec:
+  selector:
+    app: flights-svc
+  ports:
+    - protocol: TCP
+      port: 8002
+      targetPort: 8002
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flights-svc
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: flights-svc
+  template:
+    metadata:
+      labels:
+        app: flights-svc
+    spec:
+      containers:
+      - name: flights-svc
+        image: kayak-clone/flights-svc:latest
+        ports:
+        - containerPort: 8002
+        env:
+        - name: DB_HOST
+          value: "mysql"
+        - name: DB_USER
+          value: "kayak"
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-credentials
+              key: db-password
+        - name: DB_NAME
+          value: "kayak"
+        - name: MONGODB_URL
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-credentials
+              key: connection-uri
+        - name: REDIS_URL
+          value: "redis://redis:6379"
+        - name: KAFKA_BROKERS
+          value: "kafka:29092"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8002
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hotels-svc
+spec:
+  selector:
+    app: hotels-svc
+  ports:
+    - protocol: TCP
+      port: 8003
+      targetPort: 8003
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hotels-svc
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: hotels-svc
+  template:
+    metadata:
+      labels:
+        app: hotels-svc
+    spec:
+      containers:
+      - name: hotels-svc
+        image: kayak-clone/hotels-svc:latest
+        ports:
+        - containerPort: 8003
+        env:
+        - name: DB_HOST
+          value: "mysql"
+        - name: DB_USER
+          value: "kayak"
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-credentials
+              key: db-password
+        - name: DB_NAME
+          value: "kayak"
+        - name: REDIS_URL
+          value: "redis://redis:6379"
+        - name: KAFKA_BROKERS
+          value: "kafka:29092"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8003
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cars-svc
+spec:
+  selector:
+    app: cars-svc
+  ports:
+    - protocol: TCP
+      port: 8004
+      targetPort: 8004
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cars-svc
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cars-svc
+  template:
+    metadata:
+      labels:
+        app: cars-svc
+    spec:
+      containers:
+      - name: cars-svc
+        image: kayak-clone/cars-svc:latest
+        ports:
+        - containerPort: 8004
+        env:
+        - name: DB_HOST
+          value: "mysql"
+        - name: DB_USER
+          value: "kayak"
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-credentials
+              key: db-password
+        - name: DB_NAME
+          value: "kayak"
+        - name: REDIS_URL
+          value: "redis://redis:6379"
+        - name: KAFKA_BROKERS
+          value: "kafka:29092"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8004
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing-svc
+spec:
+  selector:
+    app: billing-svc
+  ports:
+    - protocol: TCP
+      port: 8005
+      targetPort: 8005
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-svc
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: billing-svc
+  template:
+    metadata:
+      labels:
+        app: billing-svc
+    spec:
+      containers:
+      - name: billing-svc
+        image: kayak-clone/billing-svc:latest
+        ports:
+        - containerPort: 8005
+        env:
+        - name: DB_HOST
+          value: "mysql"
+        - name: DB_USER
+          value: "kayak"
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-credentials
+              key: db-password
+        - name: DB_NAME
+          value: "kayak"
+        - name: KAFKA_BROKERS
+          value: "kafka:29092"
+        - name: STRIPE_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-secrets
+              key: stripe-secret-key
+        - name: REDIS_URL
+          value: "redis://redis:6379"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8005
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: admin-svc
+spec:
+  selector:
+    app: admin-svc
+  ports:
+    - protocol: TCP
+      port: 8006
+      targetPort: 8006
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admin-svc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: admin-svc
+  template:
+    metadata:
+      labels:
+        app: admin-svc
+    spec:
+      containers:
+      - name: admin-svc
+        image: kayak-clone/admin-svc:latest
+        ports:
+        - containerPort: 8006
+        env:
+        - name: DB_HOST
+          value: "mysql"
+        - name: DB_USER
+          value: "kayak"
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-credentials
+              key: db-password
+        - name: DB_NAME
+          value: "kayak"
+        - name: MONGODB_URL
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-credentials
+              key: connection-uri
+        - name: REDIS_URL
+          value: "redis://redis:6379"
+        - name: KAFKA_BROKERS
+          value: "kafka:29092"
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: api-secrets
+              key: jwt-secret
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8006
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: concierge-svc
+spec:
+  selector:
+    app: concierge-svc
+  ports:
+    - protocol: TCP
+      port: 8007
+      targetPort: 8007
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: concierge-svc
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: concierge-svc
+  template:
+    metadata:
+      labels:
+        app: concierge-svc
+    spec:
+      containers:
+      - name: concierge-svc
+        image: kayak-clone/concierge-svc:latest
+        ports:
+        - containerPort: 8007
+        env:
+        - name: CONCIERGE_SQLITE_URL
+          value: "sqlite+aiosqlite:///app/concierge.db"
+        - name: CONCIERGE_REDIS_URL
+          value: "redis://redis:6379/2"
+        - name: CONCIERGE_FLIGHTS_SERVICE_URL
+          value: "http://flights-svc:8002"
+        - name: CONCIERGE_HOTELS_SERVICE_URL
+          value: "http://hotels-svc:8003"
+        - name: CONCIERGE_CARS_SERVICE_URL
+          value: "http://cars-svc:8004"
+        - name: CONCIERGE_KAFKA_BOOTSTRAP_SERVERS
+          value: "kafka:29092"
+        - name: CONCIERGE_KAFKA_DEAL_TOPIC
+          value: "deal.events"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8007
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: deals-worker
+spec:
+  selector:
+    app: deals-worker
+  ports:
+    - protocol: TCP
+      port: 8008
+      targetPort: 8008
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deals-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: deals-worker
+  template:
+    metadata:
+      labels:
+        app: deals-worker
+    spec:
+      containers:
+      - name: deals-worker
+        image: kayak-clone/deals-worker:latest
+        ports:
+        - containerPort: 8008
+        env:
+        - name: KAFKA_BROKERS
+          value: "kafka:29092"
+        - name: MONGODB_URL
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-credentials
+              key: connection-uri
+        - name: MYSQL_URL
+          valueFrom:
+            secretKeyRef:
+              name: mysql-credentials
+              key: connection-uri
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-svc
+spec:
+  selector:
+    app: notification-svc
+  ports:
+    - protocol: TCP
+      port: 8009
+      targetPort: 8009
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-svc
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: notification-svc
+  template:
+    metadata:
+      labels:
+        app: notification-svc
+    spec:
+      containers:
+      - name: notification-svc
+        image: kayak-clone/notification-svc:latest
+        ports:
+        - containerPort: 8009
+        env:
+        - name: KAFKA_BROKERS
+          value: "kafka:29092"
+        - name: MYSQL_URL
+          valueFrom:
+            secretKeyRef:
+              name: mysql-credentials
+              key: connection-uri
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8009
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: booking-svc
+spec:
+  selector:
+    app: booking-svc
+  ports:
+    - protocol: TCP
+      port: 8011
+      targetPort: 8011
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: booking-svc
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: booking-svc
+  template:
+    metadata:
+      labels:
+        app: booking-svc
+    spec:
+      containers:
+      - name: booking-svc
+        image: kayak-clone/booking-svc:latest
+        ports:
+        - containerPort: 8011
+        env:
+        - name: DB_HOST
+          value: "mysql"
+        - name: DB_USER
+          value: "kayak"
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-credentials
+              key: db-password
+        - name: DB_NAME
+          value: "kayak"
+        - name: KAFKA_BROKERS
+          value: "kafka:29092"
+        - name: FLIGHTS_SVC_URL
+          value: "http://flights-svc:8002"
+        - name: HOTELS_SVC_URL
+          value: "http://hotels-svc:8003"
+        - name: CARS_SVC_URL
+          value: "http://cars-svc:8004"
+        - name: BILLING_SVC_URL
+          value: "http://billing-svc:8005"
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8011

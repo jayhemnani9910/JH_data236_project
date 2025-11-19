@@ -1,0 +1,58 @@
+{
+  "name": "kayak-microservices",
+  "version": "1.0.0",
+  "description": "Kayak-like travel booking system with microservices architecture",
+  "scripts": {
+    "dev:gateway": "cd apps/api-gateway && npm run dev",
+    "dev:user": "cd apps/user-svc && npm run dev",
+    "dev:flights": "cd apps/flights-svc && npm run dev",
+    "dev:hotels": "cd apps/hotels-svc && npm run dev",
+    "dev:cars": "cd apps/cars-svc && npm run dev",
+    "dev:billing": "cd apps/billing-svc && npm run dev",
+    "dev:booking": "cd apps/booking-svc && npm run dev",
+    "dev:admin": "cd apps/admin-svc && npm run dev",
+    "dev:concierge": "cd apps/concierge-svc && npm run dev",
+    "dev:deals": "cd apps/deals-worker && npm run dev",
+    "dev:client": "cd apps/client && npm run dev",
+    "dev:all": "concurrently \"npm run dev:gateway\" \"npm run dev:user\" \"npm run dev:flights\" \"npm run dev:hotels\" \"npm run dev:cars\" \"npm run dev:billing\" \"npm run dev:admin\" \"npm run dev:concierge\" \"npm run dev:deals\" \"npm run dev:booking\"",
+    "build": "npm run build:airports && npm run build:shared && npm run build:services",
+    "build:airports": "node scripts/build-airport-index.js",
+    "build:shared": "cd shared && npm run build",
+    "build:services": "for dir in apps/*/; do cd \"$dir\" && npm run build && cd -; done",
+    "test": "jest --passWithNoTests",
+    "test:unit": "jest --testPathPatterns=__tests__",
+    "test:integration": "jest --testPathPatterns=integration",
+    "test:e2e": "jest --testPathPatterns=e2e",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "seed": "cd tests && npm run seed",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:build": "docker-compose build",
+    "lint": "eslint . --ext .ts,.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20.0.0",
+    "@types/papaparse": "^5.3.8",
+    "@types/supertest": "^6.0.3",
+    "concurrently": "^8.2.0",
+    "dotenv": "^16.0.0",
+    "eslint": "^8.0.0",
+    "jest": "^30.2.0",
+    "papaparse": "^5.4.1",
+    "prettier": "^3.0.0",
+    "supertest": "^7.1.4",
+    "ts-jest": "^29.4.5",
+    "typescript": "^5.0.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "shared"
+  ],
+  "dependencies": {
+    "papaparse": "^5.4.1",
+    "ts-node-dev": "^2.0.0"
+  }
+}

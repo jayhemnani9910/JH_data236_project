@@ -1,0 +1,34 @@
+# Monorepo-aware Dockerfile for cars-svc
+FROM node:18 AS builder
+WORKDIR /workspace
+
+# Root manifests for npm ci layer caching
+COPY package.json package-lock.json ./
+COPY shared/package.json ./shared/package.json
+COPY apps/cars-svc/package.json ./apps/cars-svc/package.json
+
+RUN npm ci
+
+# Copy sources
+COPY shared ./shared
+COPY apps/cars-svc ./apps/cars-svc
+
+# Build shared then cars-svc
+RUN npm run -w shared build \
+ && npm run -w apps/cars-svc build \
+ && npm prune --omit=dev
+
+FROM node:18-slim
+WORKDIR /app
+
+# Copy built artifacts and deps
+COPY --from=builder /workspace/apps/cars-svc/dist ./apps/cars-svc/dist
+COPY --from=builder /workspace/node_modules ./node_modules
+COPY --from=builder /workspace/apps/cars-svc/package*.json ./apps/cars-svc/
+# Ensure @kayak/shared is available
+COPY --from=builder /workspace/shared/dist ./node_modules/@kayak/shared/dist
+COPY --from=builder /workspace/shared/package.json ./node_modules/@kayak/shared/package.json
+
+ENV NODE_ENV=production
+EXPOSE 8004
+CMD ["node", "apps/cars-svc/dist/index.js"]

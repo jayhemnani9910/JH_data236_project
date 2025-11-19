@@ -1,0 +1,38 @@
+# Monorepo-aware Dockerfile for flights-svc
+FROM node:18 AS builder
+
+WORKDIR /workspace
+
+# Copy root manifests first for install
+COPY package.json package-lock.json ./
+# Copy workspace manifests to leverage Docker layer caching
+COPY shared/package.json ./shared/package.json
+COPY apps/flights-svc/package.json ./apps/flights-svc/package.json
+
+# Install all workspaces (no root app)
+RUN npm ci
+
+# Copy sources
+COPY shared ./shared
+COPY apps/flights-svc ./apps/flights-svc
+
+# Build shared then flights
+RUN npm run -w shared build \
+ && npm run -w apps/flights-svc build \
+ && npm prune --omit=dev
+
+# Runtime image
+FROM node:18-slim
+WORKDIR /app
+
+# Copy built artifacts and required node_modules
+COPY --from=builder /workspace/apps/flights-svc/dist ./apps/flights-svc/dist
+COPY --from=builder /workspace/node_modules ./node_modules
+COPY --from=builder /workspace/apps/flights-svc/package*.json ./apps/flights-svc/
+## Ensure @kayak/shared runtime module is present (workspace -> node_modules)
+COPY --from=builder /workspace/shared/dist ./node_modules/@kayak/shared/dist
+COPY --from=builder /workspace/shared/package.json ./node_modules/@kayak/shared/package.json
+
+ENV NODE_ENV=production
+EXPOSE 8002
+CMD ["node", "apps/flights-svc/dist/index.js"]

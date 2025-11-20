@@ -57,7 +57,7 @@ const createFlightServiceClient = (baseURL: string) => ({
     if (!res.ok) {
       await parseServiceError(res, 'Flight service reservation');
     }
-    const body = await res.json();
+    const body = await res.json() as any;
     return body?.data;
   },
   confirm: async (reservationId: string) => {
@@ -79,7 +79,7 @@ const createFlightServiceClient = (baseURL: string) => ({
     if (!res.ok) {
       await parseServiceError(res, 'Flight lookup');
     }
-    const body = await res.json();
+    const body = await res.json() as any;
     return body?.data;
   }
 });
@@ -95,7 +95,7 @@ const createHotelServiceClient = (baseURL: string) => ({
     if (!res.ok) {
       await parseServiceError(res, 'Hotel service reservation');
     }
-    const body = await res.json();
+    const body = await res.json() as any;
     return body?.data;
   },
   confirm: async (reservationId: string) => {
@@ -117,7 +117,7 @@ const createHotelServiceClient = (baseURL: string) => ({
     if (!res.ok) {
       await parseServiceError(res, 'Hotel lookup');
     }
-    const body = await res.json();
+    const body = await res.json() as any;
     return body?.data;
   }
 });
@@ -171,7 +171,7 @@ const createCarServiceClient = (baseURL: string) => ({
     if (!res.ok) {
       await parseServiceError(res, 'Car service reservation');
     }
-    const body = await res.json();
+    const body = await res.json() as any;
     return body?.data;
   },
   confirm: async (reservationId: string) => {
@@ -197,7 +197,7 @@ const createCarServiceClient = (baseURL: string) => ({
     if (!res.ok) {
       await parseServiceError(res, 'Car lookup');
     }
-    const body = await res.json();
+    const body = await res.json() as any;
     return body?.data;
   }
 });

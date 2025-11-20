@@ -1,14 +1,42 @@
-# Simple build for External Adapters - use pre-built dist
-FROM node:18-alpine
+# Multi-stage build for External Adapters
+FROM node:18-alpine AS builder
 
+WORKDIR /build
+
+# Build shared package first
+COPY shared/ ./shared/
+WORKDIR /build/shared
+RUN npm install && npm run build
+
+# Build external-adapters
+WORKDIR /build/apps/external-adapters
+COPY apps/external-adapters/package*.json ./
+RUN npm install
+
+COPY apps/external-adapters/tsconfig.json ./
+COPY apps/external-adapters/src ./src
+
+# Replace stub with real shared package
+RUN rm -f node_modules/@kayak/shared
+RUN mkdir -p node_modules/@kayak/shared
+RUN cp /build/shared/package.json node_modules/@kayak/shared/
+RUN cp -r /build/shared/dist/* node_modules/@kayak/shared/
+
+RUN npm run build
+
+FROM node:18-alpine
 WORKDIR /app
 
-# Copy package files and install only production dependencies
-COPY package*.json ./
+COPY --from=builder /build/apps/external-adapters/package*.json ./
 RUN npm install --production
 
-# Copy pre-built dist folder
-COPY dist ./dist
+COPY --from=builder /build/apps/external-adapters/dist ./dist
+
+# Copy shared package to runtime
+RUN rm -f node_modules/@kayak/shared
+RUN mkdir -p node_modules/@kayak/shared
+COPY --from=builder /build/shared/package.json node_modules/@kayak/shared/
+COPY --from=builder /build/shared/dist node_modules/@kayak/shared/
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs

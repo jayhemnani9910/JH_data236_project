@@ -41,7 +41,7 @@ jobs:
     - name: Install dependencies
       run: |
         npm ci
-        npm run bootstrap
+        npm run build:shared
     
     - name: Run linting
       run: npm run lint
@@ -88,13 +88,20 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Install and Build Dependencies
+      run: |
+        npm ci
+        npm run build:shared
+        cd apps/notification-svc && npm run build
+        cd apps/external-adapters && npm run build
+
     - name: Build Docker images
       run: |
-        docker compose -f docker compose.yml build
+        docker compose -f docker-compose.yml build
     
     - name: Test Docker images
       run: |
-        docker compose -f docker compose.yml up -d
+        docker compose -f docker-compose.yml up -d
         sleep 30
-        docker compose -f docker compose.yml exec api-gateway npm run test:health
-        docker compose -f docker compose.yml down
+        docker compose -f docker-compose.yml exec api-gateway npm run test:health
+        docker compose -f docker-compose.yml down

@@ -1,26 +1,46 @@
-# Notification Service - copy shared module from host
-FROM node:18-slim
+# Multi-stage build for Notification Service
+FROM node:18-alpine AS builder
 
+WORKDIR /build
+
+# Build shared package first
+COPY shared/ ./shared/
+WORKDIR /build/shared
+RUN npm install && npm run build
+
+# Build notification-svc
+WORKDIR /build/apps/notification-svc
+COPY apps/notification-svc/package*.json ./
+RUN npm install
+
+COPY apps/notification-svc/tsconfig.json ./
+COPY apps/notification-svc/src ./src
+
+# Replace stub with real shared package
+RUN rm -f node_modules/@kayak/shared
+RUN mkdir -p node_modules/@kayak/shared
+RUN cp /build/shared/package.json node_modules/@kayak/shared/
+RUN cp -r /build/shared/dist/* node_modules/@kayak/shared/
+
+RUN npm run build
+
+FROM node:18-alpine
 WORKDIR /app
 
-# Copy package files and install only production dependencies FIRST
-COPY apps/notification-svc/package*.json ./
+COPY --from=builder /build/apps/notification-svc/package*.json ./
 RUN npm install --production
 
-# Remove symlink if npm created one, then copy actual shared module
-RUN rm -rf node_modules/@kayak/shared
-RUN mkdir -p node_modules/@kayak/shared
-COPY shared/dist ./node_modules/@kayak/shared
-# Create package.json pointing to index.js (not dist/index.js)
-RUN echo '{"name":"@kayak/shared","version":"1.0.0","main":"index.js"}' > node_modules/@kayak/shared/package.json
+COPY --from=builder /build/apps/notification-svc/dist ./dist
 
-# Copy pre-built dist folder
-COPY apps/notification-svc/dist ./dist
+# Copy shared package to runtime
+RUN rm -f node_modules/@kayak/shared
+RUN mkdir -p node_modules/@kayak/shared
+COPY --from=builder /build/shared/package.json node_modules/@kayak/shared/
+COPY --from=builder /build/shared/dist node_modules/@kayak/shared/
 
 # Create non-root user
-RUN groupadd -g 1001 nodejs && \
-    useradd -r -u 1001 -g nodejs nodejs && \
-    chown -R nodejs:nodejs /app
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S nodejs -u 1001
 
 USER nodejs
 

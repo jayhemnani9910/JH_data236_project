@@ -31,7 +31,7 @@ interface CreateBookingRequest {
 const parseServiceError = async (res: any, action: string) => {
   let message = `${action} failed: ${res.status}`;
   try {
-    const body = await res.json() as any;
+    const body = await res.json();
     message = body?.error?.message ? `${action} failed: ${body.error.message}` : message;
   } catch {
     try {

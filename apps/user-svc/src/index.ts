@@ -180,7 +180,7 @@ class UserService {
 
       // Create user
       // FIX: Use SSN as User ID per spec
-      const userId = userData.ssn;
+      const userId = userData.ssn!; // Already validated by validateCreateUserData
       const now = new Date().toISOString().slice(0, 19).replace('T', ' '); // MySQL datetime format
       const user: User = {
         id: userId,
@@ -637,7 +637,7 @@ class UserService {
 
       // Create user
       // FIX: Use SSN as User ID per spec
-      const userId = userData.ssn;
+      const userId = userData.ssn!; // Already validated by validateCreateUserData
       const now = new Date().toISOString().slice(0, 19).replace('T', ' '); // MySQL datetime format
       const user: User = {
         id: userId,

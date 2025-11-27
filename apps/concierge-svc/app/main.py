@@ -46,8 +46,8 @@ async def lifespan(app: FastAPI):
     
     # Initialize LLM service
     llm_service = LLMService(
-        base_url=settings.ollama_url if hasattr(settings, 'ollama_url') else "http://localhost:11434",
-        model=settings.ollama_model if hasattr(settings, 'ollama_model') else "qwen2.5:3b"
+        base_url=settings.ollama_url,
+        model=settings.ollama_model
     )
 
     background_tasks: list[asyncio.Task] = []

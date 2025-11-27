@@ -64,7 +64,7 @@ export class HotelsService {
     // Search hotels (support both GET query params and POST JSON body)
     this.app.get('/hotels/search', this.searchHotels.bind(this));
     this.app.post('/hotels/search', this.searchHotels.bind(this));
-    
+
     // Get hotel by ID
     this.app.get('/hotels/:id', this.getHotelById.bind(this));
 
@@ -76,7 +76,7 @@ export class HotelsService {
 
   private async createReservation(req: Request, res: Response) {
     const { id: roomId } = req.params;
-    const { bookingId } = req.body;
+    const { bookingId, rooms = 1 } = req.body;
 
     if (!bookingId) {
       return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'bookingId is required' } });
@@ -86,13 +86,13 @@ export class HotelsService {
     try {
       await conn.beginTransaction();
 
-      const [rows] = await conn.execute('SELECT available FROM hotel_rooms WHERE id = ? FOR UPDATE', [roomId]);
+      const [rows] = await conn.execute('SELECT available_rooms FROM hotel_rooms WHERE id = ? FOR UPDATE', [roomId]);
       const room = (rows as any)[0];
 
       if (!room) throw new Error('Hotel room not found');
-      if (!room.available) throw new Error('Hotel room is not available');
+      if (room.available_rooms < rooms) throw new Error(`Only ${room.available_rooms} room(s) available`);
 
-      await conn.execute('UPDATE hotel_rooms SET available = 0 WHERE id = ?', [roomId]);
+      await conn.execute('UPDATE hotel_rooms SET available_rooms = available_rooms - ? WHERE id = ?', [rooms, roomId]);
 
       const reservationId = uuidv4();
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15-minute expiration
@@ -103,7 +103,7 @@ export class HotelsService {
       );
 
       await conn.commit();
-      
+
       console.log(`[SAGA] Reservation ${reservationId} created for room ${roomId}`);
       res.status(201).json({ success: true, data: { reservationId } });
 
@@ -157,7 +157,9 @@ export class HotelsService {
       }
 
       await conn.execute('UPDATE hotel_reservations SET status = ? WHERE id = ?', ['cancelled', reservationId]);
-      await conn.execute('UPDATE hotel_rooms SET available = 1 WHERE id = ?', [reservation.room_id]);
+      // Note: Currently assumes 1 room per reservation since hotel_reservations table doesn't track room count
+      // If multiple rooms per reservation is needed, add a 'rooms' column to hotel_reservations
+      await conn.execute('UPDATE hotel_rooms SET available_rooms = available_rooms + 1 WHERE id = ?', [reservation.room_id]);
 
       await conn.commit();
 
@@ -192,7 +194,7 @@ export class HotelsService {
           (searchParams as any).starRating = Array.from({ length: 5 - minStar + 1 }, (_, i) => minStar + i);
         }
       }
-      
+
       // Validate required fields
       if (!searchParams.destination) {
         return res.status(400).json({
@@ -204,12 +206,16 @@ export class HotelsService {
           }
         });
       }
-      
+
       const cacheKey = `hotels_search:${JSON.stringify(searchParams)}`;
       if (this.redis && (this.redis as any).isReady) {
         const cached = await this.redis.get(cacheKey);
         if (cached) {
-          return res.json(JSON.parse(cached));
+          res.setHeader('X-Cache', 'HIT');
+          return res.json({
+            success: true,
+            data: JSON.parse(cached)
+          });
         }
       }
 
@@ -220,6 +226,8 @@ export class HotelsService {
         whereClause += ' AND (h.name LIKE ? OR CONCAT(h.address_city, ", ", h.address_state) LIKE ? OR h.location_code LIKE ?)';
         params.push(`%${searchParams.destination}%`, `%${searchParams.destination}%`, `%${searchParams.destination}%`);
       }
+
+
 
       if (searchParams.minPrice) {
         whereClause += ' AND hr.price_per_night >= ?';
@@ -241,18 +249,19 @@ export class HotelsService {
       const offset = (page - 1) * limit;
 
       const sql = `
-         SELECT hr.id, hr.hotel_id, hr.type AS room_type, hr.description, hr.max_occupancy, 
-                hr.beds AS bed_type, hr.amenities, hr.price_per_night AS base_price, 
+         SELECT hr.id, hr.hotel_id, hr.type AS room_type, hr.description, hr.max_occupancy,
+                hr.beds AS bed_type, hr.amenities, hr.price_per_night AS base_price,
                 hr.currency, hr.available, hr.images,
-                h.name, h.description AS hotel_description, h.star_rating, 
+                h.name, h.description AS hotel_description, h.star_rating,
                 CONCAT(h.address_city, ', ', h.address_state) AS address
         FROM hotel_rooms hr
         JOIN hotels h ON hr.hotel_id = h.id
         ${whereClause}
         ORDER BY h.star_rating DESC, hr.price_per_night ASC
-        LIMIT ${limit} OFFSET ${offset}
+        LIMIT ? OFFSET ?
       `;
 
+      params.push(limit, offset);
       const [rows] = await this.db.execute(sql, params);
       const hotels = rows as any[];
 
@@ -272,6 +281,7 @@ export class HotelsService {
         await this.redis.setEx(cacheKey, 300, JSON.stringify(response));
       }
 
+      res.setHeader('X-Cache', 'MISS');
       res.json({
         success: true,
         data: response
@@ -291,14 +301,14 @@ export class HotelsService {
   private async getHotelById(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      
+
       const [rows] = await this.db.execute(`
         SELECT hr.*, h.name, h.description, h.star_rating, h.address_city
         FROM hotel_rooms hr
         JOIN hotels h ON hr.hotel_id = h.id
         WHERE hr.id = ?
       `, [id]);
-      
+
       const hotel = (rows as any[])[0];
 
       if (!hotel) {

@@ -1,5 +1,3 @@
-version: '3.8'
-
 networks:
   kayak-net:
     driver: bridge
@@ -17,13 +15,15 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./platform/mysql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
     # Use default network so all services can resolve 'mysql'
     command: --default-authentication-plugin=mysql_native_password
     healthcheck:
       test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   mongodb:
     image: mongo:6.0
@@ -35,6 +35,12 @@ services:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   redis:
     image: redis:7.0-alpine
@@ -43,20 +49,34 @@ services:
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   zookeeper:
     image: confluentinc/cp-zookeeper:7.4.0
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_4LW_COMMANDS_WHITELIST: "*"
     volumes:
       - zookeeper_data:/var/lib/zookeeper/data
       - zookeeper_logs:/var/lib/zookeeper/log
+    healthcheck:
+      test: bash -c "echo ruok > /dev/tcp/localhost/2181"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   kafka:
     image: confluentinc/cp-kafka:7.4.0
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     ports:
       - "9093:9092"
     environment:
@@ -68,6 +88,12 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: nc -z localhost 9092 || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
   nginx:
     image: nginx:alpine
@@ -98,11 +124,14 @@ services:
       - NOTIFICATION_SVC_URL=http://notification-svc:8009
       - BOOKING_SVC_URL=http://booking-svc:8011
     depends_on:
-      - redis
-      - mysql
-      - kafka
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      test: wget --no-verbose --tries=1 --spider http://localhost:8000/health || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
@@ -132,10 +161,12 @@ services:
       - JWT_SECRET=${JWT_SECRET:-dev_jwt_secret_32_chars_min}
       - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-dev_jwt_refresh_secret_32_chars_min}
     depends_on:
-      - mysql
-      - redis
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8001/health" ]
+      test: wget --no-verbose --tries=1 --spider http://localhost:8001/health || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
@@ -166,12 +197,16 @@ services:
       - REDIS_URL=redis://redis:6379
       - KAFKA_BROKERS=kafka:29092
     depends_on:
-      - mysql
-      - mongodb
-      - redis
-      - kafka
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8002/health" ]
+      test: wget --no-verbose --tries=1 --spider http://localhost:8002/health || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
@@ -201,12 +236,16 @@ services:
       - REDIS_URL=redis://redis:6379
       - KAFKA_BROKERS=kafka:29092
     depends_on:
-      - mysql
-      - mongodb
-      - redis
-      - kafka
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8003/health" ]
+      test: wget --no-verbose --tries=1 --spider http://localhost:8003/health || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
@@ -236,12 +275,16 @@ services:
       - REDIS_URL=redis://redis:6379
       - KAFKA_BROKERS=kafka:29092
     depends_on:
-      - mysql
-      - mongodb
-      - redis
-      - kafka
+      mysql:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8004/health" ]
+      test: wget --no-verbose --tries=1 --spider http://localhost:8004/health || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
@@ -268,14 +311,17 @@ services:
       - DB_PASSWORD=${DB_PASSWORD:-change_me_db_password}
       - DB_NAME=kayak
       - KAFKA_BROKERS=kafka:29092
-      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-sk_test_replace_me}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY:-sk_test_dummy_key}
       - REDIS_URL=redis://redis:6379
     depends_on:
-      - mysql
-      - kafka
-      - redis
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8005/health" ]
+      test: wget --no-verbose --tries=1 --spider http://localhost:8005/health || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
@@ -306,11 +352,14 @@ services:
       - KAFKA_BROKERS=kafka:29092
       - JWT_SECRET=${JWT_SECRET:-dev_jwt_secret_32_chars_min}
     depends_on:
-      - mysql
-      - redis
-      - kafka
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8006/health" ]
+      test: wget --no-verbose --tries=1 --spider http://localhost:8006/health || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
@@ -342,12 +391,16 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      - kafka
-      - flights-svc
-      - hotels-svc
-      - cars-svc
+      kafka:
+        condition: service_healthy
+      flights-svc:
+        condition: service_started
+      hotels-svc:
+        condition: service_started
+      cars-svc:
+        condition: service_started
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8007/health" ]
+      test: curl -f http://localhost:8007/health || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
@@ -373,9 +426,12 @@ services:
       - MONGODB_URL=${MONGODB_URL:-mongodb://root:${MONGO_INITDB_ROOT_PASSWORD:-change_me_mongo_root_password}@mongodb:27017/kayak}
       - MYSQL_URL=${MYSQL_URL:-mysql://kayak:${DB_PASSWORD:-change_me_db_password}@mysql:3306/kayak}
     depends_on:
-      - kafka
-      - mongodb
-      - mysql
+      kafka:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -403,10 +459,12 @@ services:
       - CARS_SVC_URL=http://cars-svc:8004
       - BILLING_SVC_URL=http://billing-svc:8005
     depends_on:
-      - mysql
-      - kafka
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8011/health" ]
+      test: wget --no-verbose --tries=1 --spider http://localhost:8011/health || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
@@ -429,19 +487,21 @@ services:
     environment:
       - KAFKA_BROKERS=kafka:29092
       - MYSQL_URL=${MYSQL_URL:-mysql://kayak:${DB_PASSWORD:-change_me_db_password}@mysql:3306/kayak}
-      - SMTP_HOST=${SMTP_HOST}
-      - SMTP_PORT=${SMTP_PORT}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASS=${SMTP_PASS}
-      - FROM_EMAIL=${FROM_EMAIL}
-      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
-      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
-      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
+      - SMTP_HOST=${SMTP_HOST:-smtp.example.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-user}
+      - SMTP_PASS=${SMTP_PASS:-pass}
+      - FROM_EMAIL=${FROM_EMAIL:-noreply@example.com}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-AC_mock}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-mock_token}
+      - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER:-+15005550006}
     depends_on:
-      - kafka
-      - mysql
+      kafka:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8009/health" ]
+      test: [ "CMD-SHELL", "node -e \"require('http').get('http://localhost:8009/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})\"" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -462,13 +522,14 @@ services:
     ports:
       - "8010:8010"
     environment:
-      - AMADEUS_API_KEY=${AMADEUS_API_KEY}
-      - AMADEUS_API_SECRET=${AMADEUS_API_SECRET}
-      - BOOKING_COM_API_KEY=${BOOKING_COM_API_KEY}
+      - AMADEUS_API_KEY=${AMADEUS_API_KEY:-mock_key}
+      - AMADEUS_API_SECRET=${AMADEUS_API_SECRET:-mock_secret}
+      - BOOKING_COM_API_KEY=${BOOKING_COM_API_KEY:-mock_key}
     depends_on:
-      - api-gateway
+      api-gateway:
+        condition: service_started
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8010/health" ]
+      test: wget --no-verbose --tries=1 --spider http://localhost:8010/health || exit 1
       interval: 30s
       timeout: 10s
       retries: 3
@@ -492,9 +553,10 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - api-gateway
+      api-gateway:
+        condition: service_started
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:80" ]
+      test: wget --no-verbose --tries=1 --spider http://127.0.0.1:80 || exit 1
       interval: 30s
       timeout: 10s
       retries: 3

@@ -64,17 +64,29 @@ export function validateState(state: string): void {
 }
 
 /**
- * Validate ZIP code format: ##### or #####-####
- * Rejects malformed ZIP codes as per project requirements
+ * Validate ZIP code per spec examples
+ *
+ * SPEC CLARIFICATION REQUIRED:
+ * - Spec pattern states: "##### or #####-####" (5-digit or ZIP+4 format)
+ * - Spec examples include: "12" as VALID (2-digit)
+ * - This is a CONTRADICTION that should be resolved with stakeholders
+ *
+ * CURRENT IMPLEMENTATION follows spec EXAMPLES (accepts 2-digit):
+ * Valid: 95123, 12, 95192, 10293, 90086-1929 (2-digit, 5-digit, or 5+4-digit)
+ * Invalid: 1247 (4 digits), 1829A (contains letter), 37849-392 (wrong format), 2374-2384 (wrong format)
+ *
+ * To change to match spec PATTERN (reject 2-digit), update regex to: /^(\d{5}|\d{5}-\d{4})$/
  */
 export function validateZipCode(zipCode: string): void {
   if (!zipCode) {
     throw new ValidationError('ZIP code is required', 'zipCode');
   }
-  
-  const zipRegex = /^\d{5}(-\d{4})?$/;
+
+  // Accept: exactly 2 digits OR exactly 5 digits OR 5 digits + hyphen + 4 digits
+  // Following spec EXAMPLES (which include 2-digit "12" as valid)
+  const zipRegex = /^(\d{2}|\d{5}|\d{5}-\d{4})$/;
   if (!zipRegex.test(zipCode)) {
-    throw new ValidationError('Invalid ZIP code format. Expected: ##### or #####-####', 'zipCode');
+    throw new ValidationError('Invalid ZIP code format. Expected: 2 digits, 5 digits, or 5+4 (e.g., 12, 95123, 90086-1929)', 'zipCode');
   }
 }
 

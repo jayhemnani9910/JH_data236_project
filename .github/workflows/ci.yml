@@ -100,10 +100,11 @@ jobs:
     - name: Build Docker images
       run: |
         docker compose -f docker-compose.yml build
-    
+
     - name: Test Docker images
       run: |
         docker compose -f docker-compose.yml up -d
         sleep 30
-        docker compose -f docker-compose.yml exec api-gateway npm run test:health
+        # Test health endpoints instead of non-existent test:health script
+        curl -f http://localhost:8000/health || exit 1
         docker compose -f docker-compose.yml down

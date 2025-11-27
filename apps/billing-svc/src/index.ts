@@ -10,7 +10,8 @@ import { Kafka } from 'kafkajs';
 import { createClient } from 'redis';
 import {
   ApiResponse,
-  generateTraceId
+  generateTraceId,
+  validateSSN
 } from '@kayak/shared';
 
 interface PaymentIntent {
@@ -56,7 +57,7 @@ function mapStripeStatus(stripeStatus: string): string {
 
 class BillingService {
   private app: express.Application;
-  private db!: mysql.Connection;
+  private db!: mysql.Pool;
   private stripe!: Stripe;
   private kafka!: Kafka;
   private kafkaProducer: any;
@@ -139,13 +140,14 @@ class BillingService {
 
   private async initializeDatabase() {
     try {
-      this.db = await mysql.createConnection({
+      this.db = mysql.createPool({
         host: process.env.DB_HOST || 'localhost',
         user: process.env.DB_USER || 'kayak',
         password: process.env.DB_PASSWORD,
-        database: process.env.DB_NAME || 'kayak'
+        database: process.env.DB_NAME || 'kayak',
+        connectionLimit: 50
       });
-      console.log('✅ MySQL connected');
+      console.log('✅ MySQL pool connected');
     } catch (error) {
       console.error('❌ MySQL connection failed:', error);
       throw error;
@@ -177,71 +179,167 @@ class BillingService {
     const idempotencyKey = req.headers['x-idempotency-key'] as string | undefined;
     const traceId = (req as any).traceId;
 
-    if (idempotencyKey && this.redis && (this.redis as any).isReady) {
-      try {
-        const cachedResponse = await this.redis.get(`idem:${idempotencyKey}`);
-        if (cachedResponse) {
-          console.log(`[IDEM] Returning cached response for key: ${idempotencyKey}`);
-          return res.status(201).json(JSON.parse(cachedResponse));
-        }
-      } catch (e) {
-        console.error(`[IDEM] Redis error checking key ${idempotencyKey}:`, e);
-      }
-    }
-
+    const conn = await this.db.getConnection();
     try {
+      await conn.beginTransaction();
+
+      // ATOMIC IDEMPOTENCY: acquire key, create payment, store response, commit once
+      if (idempotencyKey) {
+        try {
+          // Try to acquire idempotency key (store sentinel JSON to avoid NULL forever)
+          await conn.execute(
+            'INSERT INTO idempotency_keys (`key`, response, created_at) VALUES (?, ?, NOW())',
+            [idempotencyKey, JSON.stringify({ status: '__IN_PROGRESS__' })]
+          );
+          console.log(`[IDEM] Acquired idempotency key: ${idempotencyKey}`);
+        } catch (insertErr: any) {
+          if (insertErr.code === 'ER_DUP_ENTRY') {
+            // Duplicate key: another request owns this key, read stable state
+            const [rows] = await conn.execute(
+              'SELECT response, created_at FROM idempotency_keys WHERE `key` = ? FOR UPDATE',
+              [idempotencyKey]
+            );
+
+            const row = (rows as any[])[0];
+            let resp = row?.response;
+            const createdAt = row?.created_at;
+
+            // Parse JSON response if it's a string
+            if (typeof resp === 'string') {
+              try {
+                resp = JSON.parse(resp);
+              } catch (e) {
+                // If parsing fails, treat as is
+              }
+            }
+
+            // Check if __IN_PROGRESS__ is stale (older than 5 minutes)
+            const isInProgress = (typeof resp === 'object' && resp?.status === '__IN_PROGRESS__') || resp === '__IN_PROGRESS__';
+            if (isInProgress && createdAt) {
+              const ageMinutes = (Date.now() - new Date(createdAt).getTime()) / 1000 / 60;
+              if (ageMinutes > 5) {
+                // Stale __IN_PROGRESS__ detected, delete and retry
+                console.log(`[IDEM] Stale __IN_PROGRESS__ detected (${ageMinutes.toFixed(1)}min old), allowing retry: ${idempotencyKey}`);
+                await conn.execute('DELETE FROM idempotency_keys WHERE `key` = ?', [idempotencyKey]);
+                await conn.commit();
+                // Retry from the beginning by recursively calling this method
+                return this.createPaymentIntent(req, res);
+              }
+            }
+
+            await conn.commit();
+
+            if (resp && !isInProgress) {
+              console.log(`[IDEM] Returning stored response for key: ${idempotencyKey}`);
+              // resp is already a parsed object
+              return res.status(201).json(resp);
+            }
+
+            // Still in progress (recent), return conflict
+            return res.status(409).json({
+              success: false,
+              error: {
+                code: 'IDEMPOTENCY_CONFLICT',
+                message: 'Request with this idempotency key is still processing'
+              },
+              traceId
+            });
+          }
+          throw insertErr;
+        }
+      }
+
+      // Validation
       const { amount, currency = 'usd', bookingId, userId } = req.body;
 
       if (!amount || !userId || !bookingId) {
+        await conn.rollback();
         return res.status(400).json({
           success: false,
           error: {
             code: 'BAD_REQUEST',
             message: 'Amount, userId, and bookingId are required'
+          },
+          traceId
+        });
+      }
+
+      // Validate userId is in SSN format per spec
+      try {
+        validateSSN(userId);
+      } catch (err: any) {
+        await conn.rollback();
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'INVALID_USER_ID',
+            message: 'userId must be in SSN format (###-##-####)',
+            traceId
           }
         });
       }
 
-      // Create payment intent with Stripe
+      // Failure Injection for E2E Testing (only in test mode)
+      if (process.env.ENABLE_TEST_FAILURES === 'true') {
+        if (amount === 9999.99 || (userId && userId.startsWith('999-'))) {
+          console.log(`[BILLING] [TEST MODE] Simulating payment failure for userId ${userId} (Booking: ${bookingId})`);
+          await conn.rollback();
+          return res.status(400).json({
+            success: false,
+            error: {
+              code: 'PAYMENT_FAILED',
+              message: 'Simulated Payment Failure for Testing'
+            },
+            traceId
+          });
+        }
+      }
+
+      // Create payment intent with Stripe (external call, not in transaction)
       let paymentIntent;
       const stripeKey = process.env.STRIPE_SECRET_KEY || '';
-      const isMockStripe = stripeKey.startsWith('sk_test_dummy');
+      const isMockStripe = process.env.MOCK_STRIPE === 'true' || stripeKey.startsWith('sk_test_dummy') || !stripeKey;
 
       if (isMockStripe) {
-        console.log('[billing] Using mock Stripe payment intent');
+        console.log('[billing] Using mock Stripe payment intent (mock mode enabled)');
         paymentIntent = {
           id: `pi_mock_${uuidv4()}`,
           amount: Math.round(amount * 100),
           currency,
           client_secret: `pi_mock_secret_${uuidv4()}`,
-          status: 'succeeded', // Auto-succeed for mock
+          status: 'requires_confirmation',
           metadata: { bookingId, userId }
         } as any;
       } else {
         paymentIntent = await this.stripe.paymentIntents.create({
-          amount: Math.round(amount * 100), // Convert to cents
+          amount: Math.round(amount * 100),
           currency,
-          metadata: {
-            bookingId,
-            userId
-          }
+          metadata: { bookingId, userId }
         });
       }
 
-      // Store payment record
+      // Store payment record using the same connection (same transaction)
       const paymentId = uuidv4();
-      await this.savePayment({
-        id: paymentId,
-        userId,
-        bookingId,
-        amount,
-        currency,
-        status: 'pending',
-        paymentMethod: 'card',
-        stripePaymentIntentId: paymentIntent.id,
-        createdAt: new Date().toISOString().slice(0, 19).replace('T', ' '),
-        updatedAt: new Date().toISOString().slice(0, 19).replace('T', ' ')
-      });
+      const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+      await conn.execute(
+        `INSERT INTO payments (id, user_id, booking_id, amount, currency, status,
+                               payment_method, stripe_payment_intent_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          paymentId,
+          userId,
+          bookingId,
+          amount,
+          currency,
+          'pending',
+          'card',
+          paymentIntent.id,
+          now,
+          now
+        ]
+      );
+      console.log(`[DB] Saved payment ${paymentId} in transaction`);
 
       const responseBody = {
         success: true,
@@ -255,25 +353,47 @@ class BillingService {
         traceId
       };
 
+      // Update idempotency key with final response (still in same transaction)
+      if (idempotencyKey) {
+        await conn.execute(
+          'UPDATE idempotency_keys SET response = ? WHERE `key` = ?',
+          [JSON.stringify(responseBody), idempotencyKey]
+        );
+        console.log(`[IDEM] Updated idempotency key with response: ${idempotencyKey}`);
+      }
+
+      // Commit transaction: idempotency + payment both persisted atomically
+      await conn.commit();
+      console.log(`[DB] Transaction committed for payment ${paymentId}`);
+
+      // Redis cache (best-effort, after commit)
       if (idempotencyKey && this.redis && (this.redis as any).isReady) {
         try {
-          // Cache the successful response for 24 hours
           await this.redis.setEx(`idem:${idempotencyKey}`, 86400, JSON.stringify(responseBody));
-          console.log(`[IDEM] Caching response for key: ${idempotencyKey}`);
+          console.log(`[IDEM] Redis: Cached response for key: ${idempotencyKey}`);
         } catch (e) {
           console.error(`[IDEM] Redis error caching key ${idempotencyKey}:`, e);
         }
       }
 
+      // Mock payment confirmation (fire-and-forget, after commit)
       if (isMockStripe) {
-        await this.updatePaymentStatus(paymentId, 'succeeded');
-        await this.emitPaymentSuccess(paymentId);
+        console.log('[billing] Mock mode: emitting async payment confirmation');
+        this.updatePaymentStatus(paymentId, 'succeeded')
+          .then(() => this.emitPaymentSuccess(paymentId))
+          .then(() => console.log(`[billing] Mock payment ${paymentId} confirmed asynchronously`))
+          .catch(err => console.error('[billing] Mock payment confirmation failed:', err));
       }
 
-      res.status(201).json(responseBody);
+      return res.status(201).json(responseBody);
     } catch (error: any) {
+      try {
+        await conn.rollback();
+      } catch (rollbackErr) {
+        console.error('[DB] Rollback error:', rollbackErr);
+      }
       console.error('Create payment intent error:', error);
-      res.status(500).json({
+      return res.status(500).json({
         success: false,
         error: {
           code: 'INTERNAL_ERROR',
@@ -281,6 +401,8 @@ class BillingService {
           traceId
         }
       });
+    } finally {
+      conn.release();
     }
   }
 
@@ -551,15 +673,17 @@ class BillingService {
   private async emitPaymentSuccess(paymentId: string) {
     try {
       const [rows] = await this.db.execute(
-        'SELECT p.*, b.user_id FROM payments p JOIN bookings b ON p.booking_id = b.id WHERE p.id = ?',
+        'SELECT * FROM payments WHERE id = ?',
         [paymentId]
       );
       const payments = rows as any[];
+      console.log(`[DB] Fetched payment ${paymentId}: found ${payments.length} records`);
       if (payments.length === 0) {
         return;
       }
       const payment = payments[0];
 
+      console.log(`[KAFKA] Sending payment.events for booking ${payment.booking_id}`);
       await this.kafkaProducer.send({
         topic: 'payment.events',
         messages: [{
@@ -656,6 +780,7 @@ class BillingService {
         payment.updatedAt
       ]
     );
+    console.log(`[DB] Saved payment ${payment.id}`);
   }
 
   private async getPaymentById(id: string): Promise<Payment | null> {

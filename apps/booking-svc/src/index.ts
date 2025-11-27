@@ -5,7 +5,7 @@ import express, { Request, Response } from 'express';
 import mysql from 'mysql2/promise';
 import { v4 as uuidv4 } from 'uuid';
 import { Kafka } from 'kafkajs';
-import { ApiResponse, generateTraceId } from '@kayak/shared';
+import { ApiResponse, generateTraceId, validateSSN } from '@kayak/shared';
 
 // --- Interfaces ---
 interface CreateBookingItem {
@@ -46,14 +46,33 @@ const parseServiceError = async (res: any, action: string) => {
   throw new Error(message);
 };
 
+const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 5000) => {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(id);
+    return response;
+  } catch (error: any) {
+    clearTimeout(id);
+    if (error.name === 'AbortError') {
+      throw new Error(`Request to ${url} timed out after ${timeout}ms`);
+    }
+    throw error;
+  }
+};
+
 const createFlightServiceClient = (baseURL: string) => ({
   reserve: async (itemId: string, bookingId: string, seats: number) => {
     console.log(`Reserving flight ${itemId}`);
-    const res = await fetch(`${baseURL}/flights/${itemId}/reservations`, {
+    const res = await fetchWithTimeout(`${baseURL}/flights/${itemId}/reservations`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bookingId, seats }),
-    });
+    }, 5000);
     if (!res.ok) {
       await parseServiceError(res, 'Flight service reservation');
     }
@@ -62,14 +81,14 @@ const createFlightServiceClient = (baseURL: string) => ({
   },
   confirm: async (reservationId: string) => {
     console.log(`Confirming flight reservation ${reservationId}`);
-    const res = await fetch(`${baseURL}/flights/reservations/${reservationId}`, { method: 'PATCH' });
+    const res = await fetchWithTimeout(`${baseURL}/flights/reservations/${reservationId}`, { method: 'PATCH' }, 5000);
     if (!res.ok) {
       await parseServiceError(res, 'Flight service confirm');
     }
   },
   compensate: async (reservationId: string) => {
     console.log(`Compensating flight reservation ${reservationId}`);
-    const res = await fetch(`${baseURL}/flights/reservations/${reservationId}`, { method: 'DELETE' });
+    const res = await fetchWithTimeout(`${baseURL}/flights/reservations/${reservationId}`, { method: 'DELETE' }, 5000);
     if (!res.ok) {
       await parseServiceError(res, 'Flight service compensation');
     }
@@ -87,11 +106,11 @@ const createFlightServiceClient = (baseURL: string) => ({
 const createHotelServiceClient = (baseURL: string) => ({
   reserve: async (itemId: string, bookingId: string) => {
     console.log(`Reserving hotel room ${itemId}`);
-    const res = await fetch(`${baseURL}/hotels/rooms/${itemId}/reservations`, {
+    const res = await fetchWithTimeout(`${baseURL}/hotels/rooms/${itemId}/reservations`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bookingId }),
-    });
+    }, 5000);
     if (!res.ok) {
       await parseServiceError(res, 'Hotel service reservation');
     }
@@ -100,14 +119,16 @@ const createHotelServiceClient = (baseURL: string) => ({
   },
   confirm: async (reservationId: string) => {
     console.log(`Confirming hotel reservation ${reservationId}`);
-    const res = await fetch(`${baseURL}/hotels/reservations/${reservationId}`, { method: 'PATCH' });
+    console.log(`Confirming hotel reservation ${reservationId}`);
+    const res = await fetchWithTimeout(`${baseURL}/hotels/reservations/${reservationId}`, { method: 'PATCH' }, 5000);
     if (!res.ok) {
       await parseServiceError(res, 'Hotel service confirm');
     }
   },
   compensate: async (reservationId: string) => {
     console.log(`Compensating hotel reservation ${reservationId}`);
-    const res = await fetch(`${baseURL}/hotels/reservations/${reservationId}`, { method: 'DELETE' });
+    console.log(`Compensating hotel reservation ${reservationId}`);
+    const res = await fetchWithTimeout(`${baseURL}/hotels/reservations/${reservationId}`, { method: 'DELETE' }, 5000);
     if (!res.ok) {
       await parseServiceError(res, 'Hotel service compensation');
     }
@@ -125,7 +146,7 @@ const createHotelServiceClient = (baseURL: string) => ({
 const createBillingServiceClient = (baseURL: string) => ({
   createPayment: async (bookingId: string, userId: string, amount: number, currency: string) => {
     console.log(`Creating payment for booking ${bookingId} (user ${userId}) via billing-svc`);
-    const res = await fetch(`${baseURL}/billing/create-payment-intent`, {
+    const res = await fetchWithTimeout(`${baseURL}/billing/create-payment-intent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -134,7 +155,7 @@ const createBillingServiceClient = (baseURL: string) => ({
         bookingId,
         userId,
       }),
-    });
+    }, 10000); // Higher timeout for payment
 
     if (!res.ok) {
       let errorMessage = `Billing service returned ${res.status}`;
@@ -163,11 +184,11 @@ const createBillingServiceClient = (baseURL: string) => ({
 const createCarServiceClient = (baseURL: string) => ({
   reserve: async (itemId: string, bookingId: string) => {
     console.log(`Reserving car ${itemId}`);
-    const res = await fetch(`${baseURL}/cars/${itemId}/reservations`, {
+    const res = await fetchWithTimeout(`${baseURL}/cars/${itemId}/reservations`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bookingId }),
-    });
+    }, 5000);
     if (!res.ok) {
       await parseServiceError(res, 'Car service reservation');
     }
@@ -176,18 +197,18 @@ const createCarServiceClient = (baseURL: string) => ({
   },
   confirm: async (reservationId: string) => {
     console.log(`Confirming car reservation ${reservationId}`);
-    const res = await fetch(`${baseURL}/cars/reservations/${reservationId}`, {
+    const res = await fetchWithTimeout(`${baseURL}/cars/reservations/${reservationId}`, {
       method: 'PATCH',
-    });
+    }, 5000);
     if (!res.ok) {
       await parseServiceError(res, 'Car service confirm');
     }
   },
   compensate: async (reservationId: string) => {
     console.log(`Compensating car reservation ${reservationId}`);
-    const res = await fetch(`${baseURL}/cars/reservations/${reservationId}`, {
+    const res = await fetchWithTimeout(`${baseURL}/cars/reservations/${reservationId}`, {
       method: 'DELETE',
-    });
+    }, 5000);
     if (!res.ok) {
       await parseServiceError(res, 'Car service compensation');
     }
@@ -285,8 +306,12 @@ class BookingService {
     });
   }
 
-  private async handlePaymentSucceeded(event: { bookingId: string }) {
-    const { bookingId } = event;
+  private async handlePaymentSucceeded(event: any) {
+    const bookingId = event.bookingId || event.booking_id;
+    if (!bookingId) {
+      console.error('[SAGA] Missing bookingId in payment_succeeded event', event);
+      return;
+    }
     console.log(`[SAGA] Payment succeeded for booking ${bookingId}. Confirming reservations.`);
 
     // Fetch all booking items to confirm underlying reservations
@@ -295,7 +320,7 @@ class BookingService {
     let failures = 0;
     for (const item of (items as any[])) {
       try {
-        const details = JSON.parse(item.details);
+        const details = typeof item.details === 'string' ? JSON.parse(item.details) : item.details;
         const reservationId = details?.reservationId;
         if (!reservationId) {
           throw new Error('Missing reservationId in booking item details');
@@ -415,6 +440,20 @@ class BookingService {
     const payload: CreateBookingRequest = req.body;
     if (!payload?.userId || !Array.isArray(payload.items) || payload.items.length === 0) {
       return res.status(400).json({ success: false, error: { code: 'BAD_REQUEST', message: 'userId and items are required' } });
+    }
+
+    // Validate userId is in SSN format per spec
+    try {
+      validateSSN(payload.userId);
+    } catch (err: any) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'INVALID_USER_ID',
+          message: 'userId must be in SSN format (###-##-####)',
+          traceId
+        }
+      });
     }
 
     const itemTypes = Array.from(new Set(payload.items.map(i => i.type)));
@@ -557,19 +596,25 @@ class BookingService {
         );
       }
 
-      console.log(`[SAGA] All reservations successful for booking ${bookingId}. Triggering payment.`);
+      console.log(`[SAGA] All reservations successful for booking ${bookingId}. Committing booking.`);
       await conn.execute('UPDATE bookings SET status = ? WHERE id = ?', ['awaiting_payment', bookingId]);
 
+      // CRITICAL FIX: Commit booking BEFORE initiating payment to prevent "charged but no booking" scenario
+      // If payment fails after this point, we'll update booking status via Kafka event handler
+      await conn.commit();
+      transactionStarted = false;
+
+      // 6. Now initiate payment AFTER booking is persisted
+      console.log(`[SAGA] Booking ${bookingId} committed. Initiating payment.`);
       const payment = await this.billingService.createPayment(
         bookingId,
         payload.userId,
         totalAmount,
         bookingCurrency.toLowerCase()
       );
-      await conn.execute('UPDATE bookings SET payment_id = ? WHERE id = ?', [payment.paymentId, bookingId]);
 
-      // 6. Commit transaction and prepare response
-      await conn.commit();
+      // Update payment ID (non-transactional, best effort)
+      await this.db.execute('UPDATE bookings SET payment_id = ? WHERE id = ?', [payment.paymentId, bookingId]);
 
       // Fetch the created booking with confirmation number
       const [bookingRows] = await this.db.execute('SELECT * FROM bookings WHERE id = ?', [bookingId]);
@@ -617,37 +662,52 @@ class BookingService {
       res.status(201).json(response);
 
     } catch (error: any) {
-      console.error(`[SAGA] Error in booking ${bookingId}: ${error.message}. Rolling back.`);
+      console.error(`[SAGA] Error in booking ${bookingId}: ${error.message}`);
 
+      // If transaction was started but not committed, rollback
       if (transactionStarted) {
         try {
           await conn.rollback();
+          console.log('[SAGA] Transaction rolled back');
         } catch (rollbackError) {
           console.error('[SAGA] Failed to rollback transaction:', rollbackError);
         }
       }
 
       // Compensation Logic - undo external reservations
+      // This runs whether transaction was committed or not
       for (const compensate of compensations.reverse()) {
         try {
           await compensate();
+          console.log('[SAGA] Compensation executed successfully');
         } catch (compError: any) {
           console.error(`[SAGA] CRITICAL: Compensation failed: ${compError.message}`);
-          // Here you would add to a dead-letter queue or alert
+          // In production, add to dead-letter queue or alerting system
         }
       }
 
-      if (transactionStarted) {
+      // If booking was committed but payment failed, mark booking as failed
+      if (!transactionStarted) {
         try {
           await this.db.execute('UPDATE bookings SET status = ? WHERE id = ?', ['failed', bookingId]);
+          console.log(`[SAGA] Marked booking ${bookingId} as failed after post-commit error`);
         } catch (updateError) {
           console.error(`[SAGA] Could not update booking status to failed: ${updateError}`);
         }
       }
 
-      res.status(500).json({ success: false, error: { code: 'BOOKING_FAILED', message: error.message }, traceId });
+      res.status(500).json({
+        success: false,
+        error: {
+          code: 'BOOKING_FAILED',
+          message: error.message
+        },
+        traceId
+      });
     } finally {
-      conn.release();
+      if (conn) {
+        conn.release();
+      }
     }
   }
 

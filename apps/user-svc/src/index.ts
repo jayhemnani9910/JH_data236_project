@@ -8,9 +8,9 @@ import { createClient } from 'redis';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
-import { 
-  User, 
-  CreateUserRequest, 
+import {
+  User,
+  CreateUserRequest,
   UpdateUserRequest,
   ApiResponse,
   generateTraceId,
@@ -98,19 +98,19 @@ class UserService {
 
     // Create user
     this.app.post('/users', this.createUser.bind(this));
-    
+
     // Get user by ID
     this.app.get('/users/:id', this.getUserById.bind(this));
-    
+
     // Update user
     this.app.put('/users/:id', this.updateUser.bind(this));
-    
+
     // Delete user
     this.app.delete('/users/:id', this.deleteUser.bind(this));
-    
+
     // Search users
     this.app.get('/users', this.searchUsers.bind(this));
-    
+
     // Validate user data
     this.app.post('/users/validate', this.validateUserData.bind(this));
 
@@ -131,7 +131,7 @@ class UserService {
   private async createUser(req: Request, res: Response) {
     try {
       const userData: CreateUserRequest = req.body;
-      
+
       // Validate input
       try {
         this.validateCreateUserData(userData);
@@ -145,15 +145,29 @@ class UserService {
           }
         });
       }
-      
-      // Check for duplicates
-      const existingUser = await this.findUserByEmail(userData.email);
-      if (existingUser) {
+
+      // Check for duplicates (Email)
+      const existingUserEmail = await this.findUserByEmail(userData.email);
+      if (existingUserEmail) {
         return res.status(409).json({
           success: false,
           error: {
             code: 'CONFLICT',
             message: 'User with this email already exists'
+          }
+        });
+      }
+
+      // Check for duplicates (SSN)
+      // Since SSN is the ID, check by ID directly
+      const [existingSsnRows] = await this.db.execute('SELECT id FROM users WHERE id = ?', [userData.ssn]);
+      if ((existingSsnRows as any[]).length > 0) {
+        return res.status(409).json({
+          success: false,
+          error: {
+            code: 'duplicate_user',
+            message: 'User with this SSN already exists',
+            traceId: (req as any).traceId
           }
         });
       }
@@ -165,7 +179,8 @@ class UserService {
       }
 
       // Create user
-      const userId = uuidv4();
+      // FIX: Use SSN as User ID per spec
+      const userId = userData.ssn;
       const now = new Date().toISOString().slice(0, 19).replace('T', ' '); // MySQL datetime format
       const user: User = {
         id: userId,
@@ -173,7 +188,7 @@ class UserService {
         firstName: userData.firstName,
         lastName: userData.lastName,
         phone: userData.phone,
-        ssn: userData.ssn,
+        ssn: userId, // SSN is same as id per spec
         dateOfBirth: userData.dateOfBirth,
         address: userData.address,
         profileImageUrl: userData.profileImageUrl,
@@ -183,7 +198,7 @@ class UserService {
 
       // Save to database
       await this.saveUser(user, passwordHash);
-      
+
       // Cache user
       if (this.redis && (this.redis as any).isReady) {
         await this.redis.setEx(`user:${userId}`, 3600, JSON.stringify(user));
@@ -212,7 +227,7 @@ class UserService {
   private async getUserById(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      
+
       // Try cache first
       if (this.redis && (this.redis as any).isReady) {
         const cached = await this.redis.get(`user:${id}`);
@@ -265,7 +280,7 @@ class UserService {
     try {
       const { id } = req.params;
       const updateData: UpdateUserRequest = { ...req.body, id };
-      
+
       // Validate update data
       try {
         this.validateUpdateUserData(updateData);
@@ -279,7 +294,7 @@ class UserService {
           }
         });
       }
-      
+
       // Check if user exists
       const existingUser = await this.fetchUserById(id);
       if (!existingUser) {
@@ -294,7 +309,7 @@ class UserService {
 
       // Update user
       const updatedUser = await this.saveUpdatedUser(updateData);
-      
+
       // Invalidate cache
       if (this.redis && (this.redis as any).isReady) {
         await this.redis.del(`user:${id}`);
@@ -321,7 +336,7 @@ class UserService {
   private async deleteUser(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      
+
       // Check if user exists
       const existingUser = await this.fetchUserById(id);
       if (!existingUser) {
@@ -337,7 +352,7 @@ class UserService {
       // Delete from database
       await this.db.execute('DELETE FROM users WHERE id = ?', [id]);
       await this.db.execute('DELETE FROM user_addresses WHERE user_id = ?', [id]);
-      
+
       // Remove from cache
       if (this.redis && (this.redis as any).isReady) {
         await this.redis.del(`user:${id}`);
@@ -403,7 +418,7 @@ class UserService {
       params.push(Number(limit), offset);
 
       const [rows] = await this.db.execute(sql, params);
-      
+
       const users = (rows as any[]).map(row => {
         const parsedAddress = row.address ? JSON.parse(row.address) : undefined;
         const mapped: User = {
@@ -412,7 +427,7 @@ class UserService {
           firstName: row.first_name,
           lastName: row.last_name,
           phone: row.phone || undefined,
-          ssn: row.ssn || undefined,
+          ssn: row.id, // SSN is same as id (schema change: users.ssn column removed)
           dateOfBirth: row.date_of_birth || undefined,
           address: parsedAddress,
           profileImageUrl: row.profile_image_url || undefined,
@@ -493,7 +508,7 @@ class UserService {
   private async login(req: Request, res: Response) {
     try {
       const { email, password } = req.body;
-      
+
       if (!email || !password) {
         return res.status(400).json({
           success: false,
@@ -510,7 +525,7 @@ class UserService {
         [email]
       );
       const user = (rows as any[])[0];
-      
+
       if (!user) {
         return res.status(401).json({
           success: false,
@@ -534,13 +549,13 @@ class UserService {
       }
 
       // Generate tokens
-      const accessToken = this.generateAccessToken(user.id);
+      const accessToken = this.generateAccessToken(user.id, user.role);
       const refreshToken = this.generateRefreshToken(user.id);
-      
+
       // Store refresh token in Redis
       if (this.redis && (this.redis as any).isReady) {
         await this.redis.setEx(
-          `refresh_token:${user.id}:${refreshToken}`, 
+          `refresh_token:${user.id}:${refreshToken}`,
           604800, // 7 days
           'active'
         );
@@ -575,7 +590,7 @@ class UserService {
   private async register(req: Request, res: Response) {
     try {
       const userData: CreateUserRequest = req.body;
-      
+
       // Validate input
       try {
         this.validateCreateUserData(userData);
@@ -589,15 +604,30 @@ class UserService {
           }
         });
       }
-      
-      // Check for duplicates
+
+      // Check for duplicates (Email)
       const existingUser = await this.findUserByEmail(userData.email);
       if (existingUser) {
         return res.status(409).json({
           success: false,
           error: {
             code: 'CONFLICT',
-            message: 'User with this email already exists'
+            message: 'User with this email already exists',
+            traceId: (req as any).traceId
+          }
+        });
+      }
+
+      // Check for duplicates (SSN)
+      // Since SSN is the ID, check by ID directly
+      const [existingSsnRows] = await this.db.execute('SELECT id FROM users WHERE id = ?', [userData.ssn]);
+      if ((existingSsnRows as any[]).length > 0) {
+        return res.status(409).json({
+          success: false,
+          error: {
+            code: 'duplicate_user',
+            message: 'User with this SSN already exists',
+            traceId: (req as any).traceId
           }
         });
       }
@@ -606,7 +636,8 @@ class UserService {
       const passwordHash = await bcrypt.hash(userData.password as string, 10);
 
       // Create user
-      const userId = uuidv4();
+      // FIX: Use SSN as User ID per spec
+      const userId = userData.ssn;
       const now = new Date().toISOString().slice(0, 19).replace('T', ' '); // MySQL datetime format
       const user: User = {
         id: userId,
@@ -614,7 +645,7 @@ class UserService {
         firstName: userData.firstName,
         lastName: userData.lastName,
         phone: userData.phone,
-        ssn: userData.ssn,
+        ssn: userId, // SSN is same as id per spec
         dateOfBirth: userData.dateOfBirth,
         address: userData.address,
         profileImageUrl: userData.profileImageUrl,
@@ -624,15 +655,15 @@ class UserService {
 
       // Save to database
       await this.saveUser(user, passwordHash);
-      
+
       // Generate tokens
-      const accessToken = this.generateAccessToken(userId);
+      const accessToken = this.generateAccessToken(userId, 'user'); // Default role is user
       const refreshToken = this.generateRefreshToken(userId);
-      
+
       // Store refresh token in Redis
       if (this.redis && (this.redis as any).isReady) {
         await this.redis.setEx(
-          `refresh_token:${userId}:${refreshToken}`, 
+          `refresh_token:${userId}:${refreshToken}`,
           604800, // 7 days
           'active'
         );
@@ -664,7 +695,7 @@ class UserService {
   private async refreshToken(req: Request, res: Response) {
     try {
       const { refreshToken } = req.body;
-      
+
       if (!refreshToken) {
         return res.status(400).json({
           success: false,
@@ -680,12 +711,12 @@ class UserService {
         throw new Error('JWT_REFRESH_SECRET environment variable is required');
       }
       const decoded = jwt.verify(
-        refreshToken, 
+        refreshToken,
         process.env.JWT_REFRESH_SECRET
       ) as any;
-      
+
       const userId = decoded.userId;
-      
+
       // Check if refresh token exists in Redis
       if (this.redis && (this.redis as any).isReady) {
         const exists = await this.redis.get(`refresh_token:${userId}:${refreshToken}`);
@@ -701,14 +732,34 @@ class UserService {
       }
 
       // Generate new access token
-      const accessToken = this.generateAccessToken(userId);
+      // We need to fetch the user to get the role, or encode role in refresh token too.
+      // For now, let's fetch the user to be safe and get current role.
+      const user = await this.fetchUserById(userId);
+      if (!user) throw new Error('User not found during refresh');
+
+      // Note: In a real app, we might want to avoid this DB call, but for correctness of role:
+      // We'll assume the user fetch above is cached or fast enough.
+      // Actually, fetchUserById uses cache.
+
+      // We need the role from the DB/Cache because it might have changed.
+      // The User interface in shared might not have role, let's check.
+      // If User interface doesn't have role, we need to cast or fetch raw.
+      // Looking at schema, users table has role.
+      // Let's assume fetchUserById returns something with role or we query it.
+      // Wait, fetchUserById returns `User` type. Let's check `User` type definition in shared if possible.
+      // If not, we can query DB directly for role.
+
+      const [roleRows] = await this.db.execute('SELECT role FROM users WHERE id = ?', [userId]);
+      const role = (roleRows as any[])[0]?.role || 'user';
+
+      const accessToken = this.generateAccessToken(userId, role);
       const newRefreshToken = this.generateRefreshToken(userId);
-      
+
       // Remove old refresh token and add new one
       if (this.redis && (this.redis as any).isReady) {
         await this.redis.del(`refresh_token:${userId}:${refreshToken}`);
         await this.redis.setEx(
-          `refresh_token:${userId}:${newRefreshToken}`, 
+          `refresh_token:${userId}:${newRefreshToken}`,
           604800,
           'active'
         );
@@ -740,11 +791,11 @@ class UserService {
     try {
       const { refreshToken } = req.body;
       const { userId } = req.body;
-      
+
       if (refreshToken && this.redis && (this.redis as any).isReady) {
         await this.redis.del(`refresh_token:${userId}:${refreshToken}`);
       }
-      
+
       res.json({
         success: true,
         data: { message: 'Logged out successfully' },
@@ -763,12 +814,12 @@ class UserService {
     }
   }
 
-  private generateAccessToken(userId: string): string {
+  private generateAccessToken(userId: string, role: string): string {
     if (!process.env.JWT_SECRET) {
       throw new Error('JWT_SECRET environment variable is required');
     }
     return jwt.sign(
-      { userId },
+      { userId, role },
       process.env.JWT_SECRET as string,
       { expiresIn: '1h' }
     );
@@ -791,19 +842,19 @@ class UserService {
     if (!data.email || !data.firstName || !data.lastName || !data.password) {
       throw new Error('Email, firstName, lastName, and password are required');
     }
-    
+
     if (!data.ssn) {
       throw new Error('SSN is required');
     }
-    
+
     // Validate each field
     validateEmail(data.email);
     validateSSN(data.ssn);
-    
+
     if (data.password.length < 8) {
       throw new Error('Password must be at least 8 characters long');
     }
-    
+
     if (data.phone) validatePhone(data.phone);
     if (data.address) validateAddress(data.address);
   }
@@ -827,7 +878,7 @@ class UserService {
       firstName: row.first_name,
       lastName: row.last_name,
       phone: row.phone || undefined,
-      ssn: row.ssn || undefined,
+      ssn: row.id, // SSN is same as id (schema change: users.ssn column removed)
       dateOfBirth: row.date_of_birth || undefined,
       address: row.address,
       profileImageUrl: row.profile_image_url || undefined,
@@ -843,11 +894,11 @@ class UserService {
 
     // Fetch address
     const [addrRows] = await this.db.execute(
-      'SELECT * FROM user_addresses WHERE user_id = ? LIMIT 1', 
+      'SELECT * FROM user_addresses WHERE user_id = ? LIMIT 1',
       [id]
     );
     const address = (addrRows as any[])[0];
-    
+
     if (address) {
       dbUser.address = {
         street: address.street,
@@ -865,15 +916,15 @@ class UserService {
     const conn = await this.db.getConnection();
     try {
       await conn.beginTransaction();
-      
-      // Insert user (convert undefined to null)
+
+      // Insert user (id IS the SSN per spec, so ssn column removed from schema)
       await conn.execute(
-        `INSERT INTO users (id, email, password_hash, first_name, last_name, phone, ssn, 
-                            date_of_birth, profile_image_url, created_at, updated_at) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO users (id, email, password_hash, first_name, last_name, phone,
+                            date_of_birth, profile_image_url, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           user.id, user.email, passwordHash || null, user.firstName, user.lastName,
-          user.phone || null, user.ssn || null, user.dateOfBirth || null, user.profileImageUrl || null,
+          user.phone || null, user.dateOfBirth || null, user.profileImageUrl || null,
           user.createdAt, user.updatedAt
         ]
       );
@@ -890,7 +941,7 @@ class UserService {
           ]
         );
       }
-      
+
       await conn.commit();
     } catch (error) {
       await conn.rollback();
@@ -904,7 +955,7 @@ class UserService {
     const conn = await this.db.getConnection();
     try {
       await conn.beginTransaction();
-      
+
       const fields: string[] = [];
       const values: any[] = [];
 
@@ -912,7 +963,7 @@ class UserService {
       if (data.firstName) { fields.push('first_name = ?'); values.push(data.firstName); }
       if (data.lastName) { fields.push('last_name = ?'); values.push(data.lastName); }
       if (data.phone !== undefined) { fields.push('phone = ?'); values.push(data.phone || null); }
-      if (data.ssn !== undefined) { fields.push('ssn = ?'); values.push(data.ssn || null); }
+      // SSN cannot be updated as it's the primary key (id)
       if (data.dateOfBirth !== undefined) { fields.push('date_of_birth = ?'); values.push(data.dateOfBirth || null); }
       if (data.profileImageUrl !== undefined) { fields.push('profile_image_url = ?'); values.push(data.profileImageUrl || null); }
 
@@ -932,24 +983,24 @@ class UserService {
           'DELETE FROM user_addresses WHERE user_id = ?',
           [data.id]
         );
-        
+
         // Insert new address
         await conn.execute(
           `INSERT INTO user_addresses (id, user_id, street, city, state, zip_code, country, address_type, created_at) 
              VALUES (?, ?, ?, ?, ?, ?, ?, 'home', ?)`,
           [
-            uuidv4(), 
-            data.id, 
-            data.address.street || null, 
+            uuidv4(),
+            data.id,
+            data.address.street || null,
             data.address.city || null,
-            data.address.state || null, 
-            data.address.zipCode || null, 
+            data.address.state || null,
+            data.address.zipCode || null,
             data.address.country || null,
             new Date().toISOString().slice(0, 19).replace('T', ' ')
           ]
         );
       }
-      
+
       await conn.commit();
       return this.fetchUserById(data.id);
     } catch (error) {
@@ -965,7 +1016,7 @@ class UserService {
     try {
       const { id } = req.params;
       const user = await this.fetchUserById(id);
-      
+
       if (!user) {
         return res.status(404).json({
           success: false,
@@ -1000,7 +1051,7 @@ class UserService {
       }
 
       const updatedUser = await this.saveUpdatedUser({ ...updates, id });
-      
+
       res.json({
         success: true,
         data: updatedUser
@@ -1168,8 +1219,8 @@ class UserService {
         `INSERT INTO payment_methods (id, user_id, payment_type, last_four, expiry_month, 
          expiry_year, billing_address, is_default, created_at, updated_at) 
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [paymentId, id, paymentType, lastFour, expiryMonth, expiryYear, 
-         billingAddress || null, isDefault ? 1 : 0, now, now]
+        [paymentId, id, paymentType, lastFour, expiryMonth, expiryYear,
+          billingAddress || null, isDefault ? 1 : 0, now, now]
       );
 
       res.status(201).json({

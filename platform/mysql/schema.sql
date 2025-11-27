@@ -1,14 +1,14 @@
 -- MySQL Database Schema for Kayak-like Travel Booking System
 
 -- Users table (core entity)
+-- NOTE: id is SSN in format ###-##-#### per spec requirement
 CREATE TABLE users (
-    id VARCHAR(36) PRIMARY KEY,
+    id VARCHAR(11) PRIMARY KEY, -- SSN format: ###-##-####
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255),
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     phone VARCHAR(20),
-    ssn VARCHAR(11), -- Format: ###-##-####
     date_of_birth DATE,
     profile_image_url VARCHAR(500),
     role ENUM('user', 'admin') DEFAULT 'user',
@@ -22,10 +22,10 @@ CREATE TABLE users (
 -- User addresses table
 CREATE TABLE user_addresses (
     id VARCHAR(36) PRIMARY KEY,
-    user_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(11) NOT NULL, -- References users.id (SSN format)
     street VARCHAR(255) NOT NULL,
     city VARCHAR(100) NOT NULL,
-    state VARCHAR(2) NOT NULL, -- US state code
+    state VARCHAR(50) NOT NULL, -- US state abbreviation or full name
     zip_code VARCHAR(10) NOT NULL, -- ##### or #####-####
     country VARCHAR(100) NOT NULL DEFAULT 'US',
     address_type VARCHAR(20) DEFAULT 'home', -- home, work, billing
@@ -38,7 +38,7 @@ CREATE TABLE user_addresses (
 -- Payment methods table
 CREATE TABLE payment_methods (
     id VARCHAR(36) PRIMARY KEY,
-    user_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(11) NOT NULL, -- References users.id (SSN format)
     payment_type VARCHAR(50) NOT NULL,
     last_four VARCHAR(4) NOT NULL,
     expiry_month INT NOT NULL,
@@ -54,7 +54,7 @@ CREATE TABLE payment_methods (
 -- Bookings table (core booking entity)
 CREATE TABLE bookings (
     id VARCHAR(36) PRIMARY KEY,
-    user_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(11) NOT NULL, -- References users.id (SSN format)
     type ENUM('flight', 'hotel', 'car', 'package') NOT NULL,
     status ENUM('pending', 'confirmed', 'cancelled', 'completed', 'awaiting_payment', 'failed') DEFAULT 'pending',
     total_amount DECIMAL(10, 2) NOT NULL,
@@ -133,7 +133,7 @@ CREATE TABLE hotels (
     star_rating INT NOT NULL CHECK (star_rating >= 1 AND star_rating <= 5),
     address_street VARCHAR(255) NOT NULL,
     address_city VARCHAR(100) NOT NULL,
-    address_state VARCHAR(2) NOT NULL,
+    address_state VARCHAR(50) NOT NULL, -- US state abbreviation or full name
     address_zip_code VARCHAR(10) NOT NULL,
     address_country VARCHAR(100) NOT NULL DEFAULT 'US',
     location_code VARCHAR(20), -- Added for hotels-svc compatibility
@@ -218,7 +218,7 @@ CREATE TABLE car_rentals (
 CREATE TABLE billing_records (
     id VARCHAR(36) PRIMARY KEY,
     booking_id VARCHAR(36) NOT NULL,
-    user_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(11) NOT NULL, -- References users.id (SSN format)
     amount DECIMAL(10, 2) NOT NULL,
     currency VARCHAR(3) DEFAULT 'USD',
     type ENUM('charge', 'refund', 'partial_refund') NOT NULL,
@@ -238,7 +238,7 @@ CREATE TABLE billing_records (
 -- Payments table for Stripe integration
 CREATE TABLE payments (
     id VARCHAR(36) PRIMARY KEY,
-    user_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(11) NOT NULL, -- References users.id (SSN format)
     booking_id VARCHAR(36) NOT NULL,
     amount DECIMAL(10, 2) NOT NULL,
     currency VARCHAR(3) DEFAULT 'USD',
@@ -257,7 +257,7 @@ CREATE TABLE payments (
 -- User refresh tokens table for JWT
 CREATE TABLE user_refresh_tokens (
     id VARCHAR(36) PRIMARY KEY,
-    user_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(11) NOT NULL, -- References users.id (SSN format)
     token_hash VARCHAR(255) NOT NULL,
     expires_at DATETIME NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -270,7 +270,7 @@ CREATE TABLE user_refresh_tokens (
 -- Notifications table
 CREATE TABLE notifications (
     id VARCHAR(36) PRIMARY KEY,
-    user_id VARCHAR(36) NOT NULL,
+    user_id VARCHAR(11) NOT NULL, -- References users.id (SSN format)
     type ENUM('email', 'sms', 'push') NOT NULL,
     recipient VARCHAR(255) NOT NULL,
     subject VARCHAR(500),

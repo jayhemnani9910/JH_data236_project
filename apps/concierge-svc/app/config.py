@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     watch_poll_interval_seconds: int = Field(default=30, ge=10)
     request_timeout_seconds: float = Field(default=5.0)
 
+    # LLM Service configuration
+    ollama_url: str = Field(default="http://localhost:11434")
+    ollama_model: str = Field(default="qwen2.5:3b")
+
 
 @lru_cache
 def get_settings() -> Settings:

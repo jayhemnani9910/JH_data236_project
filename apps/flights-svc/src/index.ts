@@ -7,12 +7,12 @@ import mysql from 'mysql2/promise';
 import { createClient } from 'redis';
 import { v4 as uuidv4 } from 'uuid';
 import { FlightDealConsumer } from './services/kafkaConsumer';
-import { 
-  Flight, 
-  FlightSearchRequest, 
+import {
+  Flight,
+  FlightSearchRequest,
   FlightSearchResponse,
   ApiResponse,
-  generateTraceId 
+  generateTraceId
 } from '@kayak/shared';
 
 export class FlightsService {
@@ -79,17 +79,17 @@ export class FlightsService {
     // Search flights (support both GET query params and POST JSON body)
     this.app.get('/flights/search', this.searchFlights.bind(this));
     this.app.post('/flights/search', this.searchFlights.bind(this));
-    
+
     // Get flight by ID
     this.app.get('/flights/:id', this.getFlightById.bind(this));
-    
+
     // Get available flights for route
     this.app.get('/flights/route/:origin/:destination', this.getFlightsByRoute.bind(this));
 
     // --- Saga Endpoints ---
     // Create a flight reservation (Reserve step)
     this.app.post('/flights/:id/reservations', this.createReservation.bind(this));
-    
+
     // Confirm a flight reservation (Confirm step)
     this.app.patch('/flights/reservations/:reservationId', this.confirmReservation.bind(this));
 
@@ -133,7 +133,7 @@ export class FlightsService {
       );
 
       await conn.commit();
-      
+
       console.log(`[SAGA] Reservation ${reservationId} created for flight ${flightId}`);
       res.status(201).json({ success: true, data: { reservationId } });
 
@@ -158,7 +158,7 @@ export class FlightsService {
         throw new Error('Pending reservation not found or already processed');
       }
 
-      await conn.execute('UPDATE flight_reservations SET status = ?, expires_at = NULL WHERE id = ?', ['confirmed', reservationId]);
+      await conn.execute('UPDATE flight_reservations SET status = ? WHERE id = ?', ['confirmed', reservationId]);
       await conn.commit();
 
       console.log(`[SAGA] Reservation ${reservationId} confirmed`);
@@ -215,7 +215,7 @@ export class FlightsService {
     try {
       const source = req.method === 'GET' ? req.query : req.body;
       const searchParams: FlightSearchRequest = source as any;
-      
+
       // Validate required fields
       if (!searchParams.origin || !searchParams.destination) {
         return res.status(400).json({
@@ -227,7 +227,7 @@ export class FlightsService {
           }
         });
       }
-      
+
       // Try cache first
       const cacheKey = `flights_search:${JSON.stringify(searchParams)}`;
       if (this.redis && (this.redis as any).isReady) {
@@ -272,9 +272,12 @@ export class FlightsService {
       }
 
       // Handle directOnly parameter (could be string "true"/"false" or boolean)
+      // Note: Schema doesn't have a 'stops' column, so we use duration as a heuristic
+      // Direct flights typically < 6 hours (covers most domestic + short international)
+      // For better accuracy, add a 'stops' or 'is_direct' column to flights table
       const isDirectOnly = String(searchParams.directOnly) === 'true';
       if (isDirectOnly) {
-        whereClause += ' AND duration_minutes <= 300'; // Assuming direct flights under 5 hours
+        whereClause += ' AND duration_minutes <= 360'; // 6 hours threshold for direct flights
       }
 
       if (searchParams.airlines && searchParams.airlines.length > 0) {
@@ -287,12 +290,13 @@ export class FlightsService {
       const offset = (page - 1) * limit;
 
       const sql = `
-        SELECT * FROM flights 
+        SELECT * FROM flights
         ${whereClause}
         ORDER BY departure_time ASC
-        LIMIT ${limit} OFFSET ${offset}
+        LIMIT ? OFFSET ?
       `;
 
+      params.push(limit, offset);
       const [rows] = await this.db.execute(sql, params);
       const flights = rows as any[];
 
@@ -338,7 +342,7 @@ export class FlightsService {
   private async getFlightById(req: Request, res: Response) {
     try {
       const { id } = req.params;
-      
+
       const [rows] = await this.db.execute('SELECT * FROM flights WHERE id = ?', [id]);
       const flight = (rows as any[])[0];
 
@@ -474,7 +478,7 @@ export class FlightsService {
 
   private buildPriceRange(flights: any[]) {
     if (flights.length === 0) return { min: 0, max: 0, avg: 0 };
-    
+
     const prices = flights.map(f => f.price);
     return {
       min: Math.min(...prices),
@@ -485,7 +489,7 @@ export class FlightsService {
 
   private buildDurationRange(flights: any[]) {
     if (flights.length === 0) return { min: 0, max: 0, avg: 0 };
-    
+
     const durations = flights.map(f => f.duration_minutes);
     return {
       min: Math.min(...durations),
@@ -499,7 +503,7 @@ export class FlightsService {
     const direct = flights.filter(f => f.duration_minutes <= 300).length;
     const oneStop = flights.filter(f => f.duration_minutes > 300 && f.duration_minutes <= 600).length;
     const multiStop = flights.filter(f => f.duration_minutes > 600).length;
-    
+
     return { direct, oneStop, multiStop };
   }
 

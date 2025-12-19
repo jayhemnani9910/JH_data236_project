@@ -1,7 +1,17 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-export default defineConfig({
+function normalizeBasePath(value?: string): string | undefined {
+  if (!value) return undefined;
+  let base = value.trim();
+  if (!base) return undefined;
+  if (!base.startsWith('/')) base = `/${base}`;
+  if (!base.endsWith('/')) base = `${base}/`;
+  return base;
+}
+
+export default defineConfig(() => ({
+  base: normalizeBasePath(process.env.BASE_PATH) || '/',
   plugins: [react()],
   server: {
     port: 3000,
@@ -16,4 +26,4 @@ export default defineConfig({
     outDir: 'dist',
     sourcemap: true,
   },
-});
+}));

@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter, HashRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { SocketProvider } from './contexts/SocketContext';
 import App from './App';
@@ -21,6 +21,10 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+const routerMode = (import.meta.env.VITE_ROUTER_MODE as string | undefined)?.toLowerCase();
+const useHashRouter = routerMode === 'hash';
+const baseName = (import.meta.env.BASE_URL || '/').replace(/\/$/, '') || '/';
 
 // Boot instrumentation to help diagnose blank screen issues
 console.log('[client] boot start');
@@ -42,11 +46,19 @@ root.render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <SocketProvider>
-        <BrowserRouter>
-          <RootErrorBoundary>
-            <App />
-          </RootErrorBoundary>
-        </BrowserRouter>
+        {useHashRouter ? (
+          <HashRouter>
+            <RootErrorBoundary>
+              <App />
+            </RootErrorBoundary>
+          </HashRouter>
+        ) : (
+          <BrowserRouter basename={baseName === '/' ? undefined : baseName}>
+            <RootErrorBoundary>
+              <App />
+            </RootErrorBoundary>
+          </BrowserRouter>
+        )}
       </SocketProvider>
     </QueryClientProvider>
   </React.StrictMode>
